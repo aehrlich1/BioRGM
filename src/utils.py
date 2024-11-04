@@ -40,6 +40,6 @@ class Checkpoint:
             yaml.dump(output, outfile, default_flow_style=False)
 
     def save(self, model, epoch):
-        model_path = os.path.join(self.output_dir, f"epoch_{epoch}.pt")
+        model_path = os.path.join(self.output_dir, f"epoch_{epoch}.pth")
         torch.save(model.state_dict(), model_path)
         print(f"\nSaved model to {model_path}")
