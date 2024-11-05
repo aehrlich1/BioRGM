@@ -23,21 +23,30 @@ def neutralize_smiles(smiles: str) -> str:
 
 
 class Checkpoint:
-    def __init__(self, data_dir, params):
+    def __init__(self, data_dir, params, output_dir=None):
         self.data_dir = data_dir
         self.params = params
-        self.output_dir = None
+        self.output_dir = output_dir
 
         self._initialize_directory()
 
+    def _create_output_dir(self):
+        if self.output_dir is None:
+            self.output_dir = tempfile.mkdtemp(
+                dir=os.path.join(self.data_dir, "models")
+            )
+        self.output_dir = os.path.join(self.data_dir, "models", self.output_dir)
+        os.makedirs(self.output_dir)
+
     def _initialize_directory(self):
         os.makedirs(os.path.join(self.data_dir, "models"), exist_ok=True)
-        self.output_dir = tempfile.mkdtemp(dir=os.path.join(self.data_dir, "models"))
-        print(f"Created directory {self.output_dir}")
+        self._create_output_dir()
         output = {**self.params}
 
         with open(self.output_dir + "/config_pretrain.yml", "w") as outfile:
             yaml.dump(output, outfile, default_flow_style=False)
+
+        print(f"Created directory {self.output_dir}")
 
     def save(self, model, epoch):
         model_path = os.path.join(self.output_dir, f"epoch_{epoch}.pth")

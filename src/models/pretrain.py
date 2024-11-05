@@ -1,6 +1,7 @@
 import os
 import sys
 
+import wandb
 import torch
 from pytorch_metric_learning import losses, miners, samplers
 from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, BaseDistance
@@ -25,6 +26,7 @@ class Pretrain:
         self.mining_fn = None
         self.checkpoint = None
 
+        self._initialize_wandb()
         self._initialize_dataset()
         self._initialize_sampler()
         self._initialize_dataloader()
@@ -41,6 +43,11 @@ class Pretrain:
             print(f"\nEpoch {epoch}\n" + "-" * 30)
             self._train_loop()
             self.checkpoint.save(self.model, epoch)
+
+        wandb.finish()
+
+    def _initialize_wandb(self):
+        wandb.init(project="BioRGM", config=self.params)
 
     def _initialize_dataset(self) -> None:
         self.dataset = PubchemDataset(
@@ -91,7 +98,8 @@ class Pretrain:
         )
 
     def _initialize_checkpoint(self) -> None:
-        self.checkpoint = Checkpoint(self.data_dir, self.params)
+        output_dir = wandb.run.name
+        self.checkpoint = Checkpoint(self.data_dir, self.params, output_dir)
 
     def _get_distance_metric(self) -> BaseDistance:
         match self.params["distance_metric"]:
@@ -106,7 +114,6 @@ class Pretrain:
     def _train_loop(self) -> None:
         for i, data in enumerate(self.dataloader):
             label, data = data.y, data
-
             embeddings = self.model(data)
 
             indices_tuple = self.mining_fn(embeddings, label)
@@ -119,4 +126,7 @@ class Pretrain:
             if i % 20 == 0:
                 print(
                     f"Iteration {i}: Loss = {loss:.3g}, Mined triplets = {self.mining_fn.num_triplets}"
+                )
+                wandb.log(
+                    {"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets}
                 )
