@@ -29,10 +29,10 @@ class Augmentation:
         process the file provided to the constructor as filename.
         Multiprocessing is used to drastically improve the runtime.
         """
-        with open(self.input_file, "r") as line:
+        with open(self.input_file, "r") as file:
             with Pool(processes=self.processes) as pool:
                 products: list[list[str]] = pool.imap(
-                    self.process_smiles, iterable=enumerate(line)
+                    self.process_smiles, iterable=enumerate(file)
                 )
                 products = [row for row in products if row is not None]
                 self.save_to_file(
@@ -94,7 +94,6 @@ class Augmentation:
         return header
 
     def save_to_file(self, filename, header: str, data: list[list[str]]) -> None:
-        logger.warning("TRY HELLO!")
         folder = os.path.join(self.root_data_dir, "processed/")
         os.makedirs(folder, exist_ok=True)
         filename = os.path.join(folder, filename)

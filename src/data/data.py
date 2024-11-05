@@ -46,17 +46,18 @@ class PubchemDataset(InMemoryDataset):
         return str(path)
 
     def process(self) -> None:
-        with open(self.raw_paths[0], "r") as f:
-            lines = f.read().split("\n")[1:-1]
-
         data_list = []
-        for line in lines:
-            label, smiles = line.split(",")
+        with open(self.raw_paths[0], "r") as file:
+            next(file)
+            lines = file.readlines()
+            for line in lines:
+                label, smiles = line.split(",")
+                smiles = smiles.strip()
 
-            y = torch.tensor(int(label), dtype=torch.int)
-            data: torch_geometric.data.Data = from_smiles(smiles)
+                y = torch.tensor(int(label), dtype=torch.int)
+                data: torch_geometric.data.Data = from_smiles(smiles)
 
-            data.y = y
-            data_list.append(data)
+                data.y = y
+                data_list.append(data)
 
         self.save(data_list, self.processed_paths[0])
