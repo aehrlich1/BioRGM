@@ -3,13 +3,14 @@ import sys
 
 import wandb
 import torch
+from pathlib import Path
 from pytorch_metric_learning import losses, miners, samplers
 from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, BaseDistance
 from torch_geometric.loader import DataLoader
 
 from src.data.data import PubchemDataset
 from src.models.model import Model
-from src.utils import Checkpoint
+from src.utils import Checkpoint, read_config_file
 
 
 class Pretrain:
@@ -26,6 +27,17 @@ class Pretrain:
         self.mining_fn = None
         self.checkpoint = None
 
+    def train(self) -> None:
+        self.model.train()
+
+        for epoch in range(self.params["epochs"]):
+            print(f"\nEpoch {epoch}\n" + "-" * 30)
+            self._train_loop()
+            self.checkpoint.save(self.model, epoch)
+
+        wandb.finish()
+
+    def initialize_for_training(self) -> None:
         self._initialize_wandb()
         self._initialize_dataset()
         self._initialize_sampler()
@@ -36,15 +48,16 @@ class Pretrain:
         self._initialize_mining_fn()
         self._initialize_checkpoint()
 
-    def train(self) -> None:
-        self.model.train()
+    def load_pretrained_model(self, model_name) -> None:
+        weights_file_path = Path(self.data_dir) / "models" / model_name / "epoch_2.pth"
+        config_file_path = Path(self.data_dir) / "models" / model_name / "config_pretrain.yml"
+        params: dict = read_config_file(config_file_path)
 
-        for epoch in range(self.params["epochs"]):
-            print(f"\nEpoch {epoch}\n" + "-" * 30)
-            self._train_loop()
-            self.checkpoint.save(self.model, epoch)
+        self.model = Model(params["dim_h"], params["dropout"])
+        self.model.load_state_dict(torch.load(weights_file_path))
 
-        wandb.finish()
+    def load_random_model(self, dim_h, dropout) -> None:
+        self.model = Model(dim_h, dropout)
 
     def _initialize_wandb(self):
         wandb.init(project="BioRGM", config=self.params)
@@ -127,6 +140,4 @@ class Pretrain:
                 print(
                     f"Iteration {i}: Loss = {loss:.3g}, Mined triplets = {self.mining_fn.num_triplets}"
                 )
-                wandb.log(
-                    {"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets}
-                )
+                wandb.log({"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets})

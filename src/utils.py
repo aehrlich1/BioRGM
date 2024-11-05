@@ -22,6 +22,13 @@ def neutralize_smiles(smiles: str) -> str:
     return neutralized_smiles
 
 
+def read_config_file(file_path) -> dict:
+    with open(file_path, "r") as file:
+        params = yaml.load(file, Loader=yaml.FullLoader)
+
+    return params
+
+
 class Checkpoint:
     def __init__(self, data_dir, params, output_dir=None):
         self.data_dir = data_dir

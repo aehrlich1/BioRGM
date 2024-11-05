@@ -20,6 +20,7 @@ def main(DATA_DIR):
 
     # Pretraining
     pretrain = Pretrain(params, DATA_DIR)
+    pretrain.initialize_for_training()
     pretrain.train()
 
     print("Done")
