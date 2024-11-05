@@ -1,13 +1,13 @@
 import os
 import sys
-import torch
 
+import torch
 from pytorch_metric_learning import losses, miners, samplers
 from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, BaseDistance
 from torch_geometric.loader import DataLoader
 
 from src.data.data import PubchemDataset
-from src.models.model import GIN, CategoricalEmbeddingModel
+from src.models.model import Model
 from src.utils import Checkpoint
 
 
@@ -17,8 +17,6 @@ class Pretrain:
         self.data_dir = data_dir
         self.dataset = None
         self.dataloader = None
-        self.node_feature_embeddings = None
-        self.edge_feature_embeddings = None
         self.model = None
         self.optimizer = None
         self.scheduler = None
@@ -30,7 +28,6 @@ class Pretrain:
         self._initialize_dataset()
         self._initialize_sampler()
         self._initialize_dataloader()
-        self._initialize_feature_embeddings()
         self._initialize_model()
         self._initialize_loss_fn()
         self._initialize_optimizer()
@@ -59,15 +56,9 @@ class Pretrain:
             sampler=self.sampler,
         )
 
-    def _initialize_feature_embeddings(self) -> None:
-        self.node_feature_embeddings = CategoricalEmbeddingModel(category_type="node")
-        self.edge_feature_embeddings = CategoricalEmbeddingModel(category_type="edge")
-
     def _initialize_model(self) -> None:
-        self.model = GIN(
+        self.model = Model(
             dim_h=self.params["dim_h"],
-            dim_in=self.node_feature_embeddings.get_node_feature_dim(),
-            edge_dim=self.edge_feature_embeddings.get_edge_feature_dim(),
             dropout=self.params["dropout"],
         )
 
@@ -116,17 +107,11 @@ class Pretrain:
         for i, data in enumerate(self.dataloader):
             label, data = data.y, data
 
-            # use embedded feature vectors
-            data.x = self.node_feature_embeddings(data.x)
-            data.edge_attr = self.edge_feature_embeddings(data.edge_attr)
-
-            # compute prediction and loss
             embeddings = self.model(data)
 
             indices_tuple = self.mining_fn(embeddings, label)
             loss = self.loss_fn(embeddings, label, indices_tuple)
 
-            # backpropagation
             loss.backward()
             self.optimizer.step()
             self.optimizer.zero_grad()

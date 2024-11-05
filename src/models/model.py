@@ -15,6 +15,33 @@ def mlp(dim_in, dim_out):
         nn.ReLU(),
     )
 
+class Model(nn.Module):
+    """
+    Combines the CategoricalEmbeddingModel and the GIN Model
+    """
+    def __init__(self, dim_h, dropout):
+        super().__init__()
+        self.node_embedding = CategoricalEmbeddingModel(category_type="node")
+        self.edge_embedding = CategoricalEmbeddingModel(category_type="edge")
+        dim_in, edge_dim = self._get_feature_embedding_dims()
+        self.gin_model = GIN(
+            dim_h=dim_h,
+            dim_in=dim_in,
+            edge_dim=edge_dim,
+            dropout=dropout,
+        )
+
+    def forward(self, data):
+        data.x = self.node_embedding(data.x)
+        data.edge_attr = self.edge_embedding(data.edge_attr)
+
+        h = self.gin_model(data)
+        return h
+
+    def _get_feature_embedding_dims(self):
+        return self.node_embedding.get_node_feature_dim(), self.edge_embedding.get_edge_feature_dim()
+
+
 
 class CategoricalEmbeddingModel(nn.Module):
     """
