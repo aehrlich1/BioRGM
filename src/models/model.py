@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import torch_geometric.utils.smiles as pyg_smiles
 from torch import nn
 from torch_geometric.nn import GINEConv, global_add_pool
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
 
 def mlp(dim_in, dim_out):
@@ -15,10 +17,12 @@ def mlp(dim_in, dim_out):
         nn.ReLU(),
     )
 
+
 class Model(nn.Module):
     """
     Combines the CategoricalEmbeddingModel and the GIN Model
     """
+
     def __init__(self, dim_h, dropout):
         super().__init__()
         self.node_embedding = CategoricalEmbeddingModel(category_type="node")
@@ -39,8 +43,10 @@ class Model(nn.Module):
         return h
 
     def _get_feature_embedding_dims(self):
-        return self.node_embedding.get_node_feature_dim(), self.edge_embedding.get_edge_feature_dim()
-
+        return (
+            self.node_embedding.get_node_feature_dim(),
+            self.edge_embedding.get_edge_feature_dim(),
+        )
 
 
 class CategoricalEmbeddingModel(nn.Module):
@@ -50,12 +56,12 @@ class CategoricalEmbeddingModel(nn.Module):
 
     def __init__(self, category_type, embedding_dim=8):
         super().__init__()
-        if category_type == 'node':
+        if category_type == "node":
             num_categories = self._get_num_node_categories()
-        elif category_type == 'edge':
+        elif category_type == "edge":
             num_categories = self._get_num_edge_categories()
         else:
-            print('Invalid category type')
+            print("Invalid category type")
             sys.exit()
         self.embedding_dim = embedding_dim
         self.embeddings = nn.ModuleList(
@@ -80,11 +86,13 @@ class CategoricalEmbeddingModel(nn.Module):
 
     @staticmethod
     def _get_num_node_categories() -> list[int]:
-        return [len(pyg_smiles.x_map[prop]) for prop in pyg_smiles.x_map] # [119, 9, 11, 12, 9, 5, 8, 2, 2]
+        return [
+            len(pyg_smiles.x_map[prop]) for prop in pyg_smiles.x_map
+        ]  # [119, 9, 11, 12, 9, 5, 8, 2, 2]
 
     @staticmethod
     def _get_num_edge_categories() -> list[int]:
-        return [len(pyg_smiles.e_map[prop]) for prop in pyg_smiles.e_map] # [22, 6, 2]
+        return [len(pyg_smiles.e_map[prop]) for prop in pyg_smiles.e_map]  # [22, 6, 2]
 
 
 class GIN(nn.Module):
@@ -109,3 +117,13 @@ class GIN(nn.Module):
         h_G = F.normalize(h_G, dim=1)
 
         return h_G
+
+
+class ExtendedConnectivityFingerprintModel:
+    def __init__(self):
+        self.fpgen = AllChem.GetMorganGenerator(radius=2, fpSize=1024)
+
+    def __call__(self, dataloader):
+        mols = [Chem.MolFromSmiles(smiles) for smiles in dataloader.smiles]
+        ecfps = [list(ecfp) for ecfp in self.fpgen.GetFingerprints(mols)]
+        return ecfps
