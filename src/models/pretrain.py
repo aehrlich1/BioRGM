@@ -59,6 +59,18 @@ class Pretrain:
     def load_random_model(self, dim_h, dropout) -> None:
         self.model = Model(dim_h, dropout)
 
+    def evaluate_model(self, datasets: list) -> None:
+        # 1. Load dataset (EVAL)
+        # 2. Pass the dataset through the pre-trained model
+        # and obtain embeddings. batch_size=len(dataset)
+        # 3. Append embeddings to the Data object
+        # 4. Calculate cosine pairwise distances for embeddings
+        # 5. Calculate euclidean distances of target properties
+        # x. Calculate Improvement Rate S_IR
+        # x. Calculate Average Deviation S_AD
+        # return: a dictionary {"ESOL": {S_IR: 1.0, S_ID: 1.2}, "FreeSolv": {...}}
+        pass
+
     def _initialize_wandb(self):
         wandb.init(project="BioRGM", config=self.params)
 
