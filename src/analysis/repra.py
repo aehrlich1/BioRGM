@@ -46,6 +46,7 @@ class Repra:
         self.initialize_c1_c4_counts()
         self.initialize_c1_c4_ecfp_counts()
         self.calculate_improvement_rate()
+        self.calculate_average_deviation()
         self.plot_rps_map()
 
     def initialize_dataset(self, name) -> None:
@@ -63,7 +64,9 @@ class Repra:
         self.embeddings = self.calculate_embeddings(self.model)
 
     def initialize_pairwise_embeddings_distances(self) -> None:
-        self.pairwise_embeddings_distances = self.calculate_pairwise_distances(self.embeddings)
+        self.pairwise_embeddings_distances = self.calculate_pairwise_distances(
+            self.embeddings
+        )
 
     def initialize_pairwise_embeddings_similarity(self) -> None:
         self.pairwise_embeddings_similarity = self.calculate_pairwise_similarity(
@@ -152,15 +155,20 @@ class Repra:
 
         return c1, c4
 
-    def calculate_average_deviation(self):
-        pass
-
     def calculate_improvement_rate(self):
         improvement_rate = (self.c1_c4_counts["c1"] / self.c1_c4_ecfp_counts["c1"]) + (
             self.c1_c4_counts["c4"] / self.c1_c4_ecfp_counts["c4"]
         )
         print(f"Improvement rate: {improvement_rate}")
-        print("Hi")
+
+    def calculate_average_deviation(self):
+        abs_prop_dist_diff = np.abs(self.pairwise_properties_similarity - self.thresholds["epsilon_2"])
+        abs_sim_dist_diff = np.abs(self.pairwise_embeddings_similarity - (1 - self.thresholds["delta_2"]))
+
+        m = np.sum(np.minimum(abs_prop_dist_diff, abs_sim_dist_diff))
+        s_ad = m / (len(abs_prop_dist_diff))
+        print(s_ad)
+        pass
 
     def plot_rps_map(self):
         x = self.pairwise_embeddings_similarity
