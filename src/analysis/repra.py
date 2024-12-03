@@ -65,7 +65,6 @@ class Repra:
             thresholds=thresholds,
         )
 
-        print(f"Improvement rate: {improvement_rate}")
         return improvement_rate, average_deviation
 
     def get_dataset(self):
