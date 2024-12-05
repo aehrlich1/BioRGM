@@ -127,3 +127,33 @@ class ExtendedConnectivityFingerprintModel:
         mols = [Chem.MolFromSmiles(smiles) for smiles in dataloader.smiles]
         ecfps = [list(ecfp) for ecfp in self.fpgen.GetFingerprints(mols)]
         return ecfps
+
+
+class ProjectionHead(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.projection = nn.Sequential(
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, data):
+        return self.projection(data)
+
+
+
+class FinetuneModel(nn.Module):
+    def __init__(self, pretrain_model):
+        super().__init__()
+        self.pretrain_model = pretrain_model
+        self.projection_head = ProjectionHead()
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, data):
+        h_G = self.pretrain_model(data)
+        z = self.projection_head(h_G)
+        return z
