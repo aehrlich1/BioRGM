@@ -1,5 +1,6 @@
 import torch
 import wandb
+from dataclasses import dataclass, asdict
 from torch.optim import Adam
 from sklearn.metrics import roc_auc_score
 from torch.nn import BCELoss
@@ -10,32 +11,39 @@ from torch_geometric.loader import DataLoader
 from src.models.model import FinetuneModel
 
 
-def finetune(pretrain_model, dataset: str, data_dir: str) -> None:
-    """
-    1. load dataset
-    2. get dataloader
-    3. load pre-trained model
-    4. perform fine-tuning on dataset
-    """
-    wandb.init(
-        project="BioRGM_finetune",
+@dataclass
+class FinetuneParams:
+    batch_size: int
+    dataset: str
+    encoding: str
+    epochs: int
+    freeze_pretrain: bool
+    lr: float
+    classifier: str = "MLP, SVM, Linear, ..."
+    pretrain_model: str = "Random"
+
+
+def finetune(pretrain_model, params: FinetuneParams, data_dir: str) -> None:
+    wandb.init(project="BioRGM_finetune", config=asdict(params), mode="offline")
+
+    dataset = _get_dataset(params.dataset, data_dir)
+    num_output_tasks = _get_num_output_tasks(dataset)
+    train_dataloader, test_dataloader = _get_dataloaders(dataset, params.batch_size)
+    finetune_model = _initialize_finetune_model(
+        pretrain_model, num_output_tasks, params.freeze_pretrain
     )
-
-    dataset = _get_dataset(dataset, data_dir)
-    train_dataloader, test_dataloader = _get_dataloaders(dataset)
-    finetune_model = _initialize_finetune_model(pretrain_model)
-
-    _test_loop(finetune_model, test_dataloader, epoch=0)
-    for epoch in range(200):
-        print(f"\nEpoch {epoch+1}\n-------------------------------\n")
-        _train_loop(finetune_model, train_dataloader, epoch)
-        _test_loop(finetune_model, test_dataloader, epoch)
-
-
-def _train_loop(model, dataloader, epoch):
-    model.train()
+    optimizer = Adam(finetune_model.parameters(), lr=params.lr)
     loss_fn = BCELoss()
-    optimizer = Adam(model.parameters(), lr=0.00001)
+
+    _test_loop(finetune_model, test_dataloader, loss_fn, epoch=0)
+    for epoch in range(params.epochs):
+        print(f"\nEpoch {epoch+1}\n-------------------------------\n")
+        _train_loop(finetune_model, train_dataloader, optimizer, loss_fn, epoch)
+        _test_loop(finetune_model, test_dataloader, loss_fn, epoch)
+
+
+def _train_loop(model, dataloader, optimizer, loss_fn, epoch):
+    model.train()
     batch_loss = 0
 
     for data in dataloader:
@@ -50,9 +58,8 @@ def _train_loop(model, dataloader, epoch):
     wandb.log({"training loss": average_loss}, step=epoch)
 
 
-def _test_loop(model, dataloader, epoch):
+def _test_loop(model, dataloader, loss_fn, epoch):
     model.eval()
-    loss_fn = BCELoss()
     batch_loss = 0
     y_true, y_pred = [], []
 
@@ -80,14 +87,22 @@ def _get_dataset(dataset: str, data_dir: str) -> DataLoader:
     return MoleculeNet(root=data_dir, name=dataset)
 
 
-def _get_dataloaders(dataset):
+def _get_dataloaders(dataset, batch_size):
     train_dataset, test_dataset = random_split(dataset=dataset, lengths=[0.8, 0.2])
 
-    train_dataloader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-    test_dataloader = DataLoader(test_dataset, batch_size=16, shuffle=False)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     return train_dataloader, test_dataloader
 
 
-def _initialize_finetune_model(pretrain_model):
-    return FinetuneModel(pretrain_model)
+def _get_num_output_tasks(dataset):
+    return torch.numel(dataset[0].y)
+
+
+def _initialize_finetune_model(pretrain_model, out_dim: int, freeze_pretrain: bool):
+    model = FinetuneModel(pretrain_model, out_dim=out_dim)
+    if freeze_pretrain:
+        model.pretrain_model.freeze()
+
+    return model

@@ -130,14 +130,14 @@ class ExtendedConnectivityFingerprintModel:
 
 
 class ProjectionHead(nn.Module):
-    def __init__(self):
+    def __init__(self, out_dim):
         super().__init__()
         self.projection = nn.Sequential(
             nn.Linear(128, 64),
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
-            nn.Linear(32, 1),
+            nn.Linear(32, out_dim),
             nn.Sigmoid(),
         )
 
@@ -147,10 +147,10 @@ class ProjectionHead(nn.Module):
 
 
 class FinetuneModel(nn.Module):
-    def __init__(self, pretrain_model):
+    def __init__(self, pretrain_model, out_dim):
         super().__init__()
         self.pretrain_model = pretrain_model
-        self.projection_head = ProjectionHead()
+        self.projection_head = ProjectionHead(out_dim)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, data):
