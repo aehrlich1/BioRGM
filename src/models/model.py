@@ -23,22 +23,21 @@ class Model(nn.Module):
     Combines the CategoricalEmbeddingModel and the GIN Model
     """
 
-    def __init__(self, dim_h, dropout):
+    def __init__(self, embedding_model, dim_h, dropout):
         super().__init__()
-        self.node_embedding = CategoricalEmbeddingModel(category_type="node")
-        self.edge_embedding = CategoricalEmbeddingModel(category_type="edge")
-        dim_in, edge_dim = self._get_feature_embedding_dims()
+        dim_in = embedding_model.get_feature_embedding_dim()
+        edge_dim = embedding_model.get_edge_embedding_dim()
+
+        self.embedding_model = embedding_model
         self.gin_model = GIN(
-            dim_h=dim_h,
             dim_in=dim_in,
+            dim_h=dim_h,
             edge_dim=edge_dim,
             dropout=dropout,
         )
 
     def forward(self, data):
-        data.x = self.node_embedding(data.x)
-        data.edge_attr = self.edge_embedding(data.edge_attr)
-
+        data = self.embedding_model(data)
         h = self.gin_model(data)
         return h
 
@@ -47,6 +46,50 @@ class Model(nn.Module):
             self.node_embedding.get_node_feature_dim(),
             self.edge_embedding.get_edge_feature_dim(),
         )
+
+
+class OneHotEncoderModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.num_node_categories = self._get_num_node_categories()
+
+    def forward(self, x):
+        x_one_hot = [
+            torch.cat(
+                [
+                    F.one_hot(row[i], num_classes=num)
+                    for i, num in enumerate(self.num_node_categories)
+                ]
+            )
+            for row in x
+        ]
+
+        return torch.stack(x_one_hot)
+
+    @staticmethod
+    def _get_num_node_categories() -> list[int]:
+        return [
+            len(pyg_smiles.x_map[prop]) for prop in pyg_smiles.x_map
+        ]  # [119, 9, 11, 12, 9, 5, 8, 2, 2]
+
+
+class CategoricalEncodingModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.node_embedding = CategoricalEmbeddingModel(category_type="node")
+        self.edge_embedding = CategoricalEmbeddingModel(category_type="edge")
+
+    def forward(self, data):
+        data.x = self.node_embedding(data.x)
+        data.edge_attr = self.edge_embedding(data.edge_attr)
+
+        return data
+
+    def get_feature_embedding_dim(self):
+        return self.node_embedding.get_node_feature_dim()
+
+    def get_edge_embedding_dim(self):
+        return self.edge_embedding.get_edge_feature_dim()
 
 
 class CategoricalEmbeddingModel(nn.Module):
@@ -96,7 +139,7 @@ class CategoricalEmbeddingModel(nn.Module):
 
 
 class GIN(nn.Module):
-    def __init__(self, dim_h, dim_in, edge_dim, dropout=0.1):
+    def __init__(self, dim_in, dim_h, edge_dim, dropout=0.1):
         super().__init__()
         self.conv1 = GINEConv(mlp(dim_in, dim_h), edge_dim=edge_dim)
         self.conv2 = GINEConv(mlp(dim_h, dim_h), edge_dim=edge_dim)
@@ -143,7 +186,6 @@ class ProjectionHead(nn.Module):
 
     def forward(self, data):
         return self.projection(data)
-
 
 
 class FinetuneModel(nn.Module):

@@ -56,8 +56,8 @@ class Pretrain:
         self.model = Model(params["dim_h"], params["dropout"])
         self.model.load_state_dict(torch.load(weights_file_path))
 
-    def load_random_model(self, dim_h, dropout) -> None:
-        self.model = Model(dim_h, dropout)
+    def load_random_model(self, embedding_model, dim_h, dropout) -> None:
+        self.model = Model(embedding_model, dim_h, dropout)
 
     def evaluate_model(self, datasets: list) -> None:
         # 1. Load dataset (EVAL)
