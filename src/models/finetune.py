@@ -83,8 +83,16 @@ def _test_loop(model, dataloader, loss_fn, epoch):
     return average_loss, roc_auc
 
 
-def _get_dataset(dataset: str, data_dir: str) -> DataLoader:
-    return MoleculeNet(root=data_dir, name=dataset)
+def _get_dataset(dataset: str, data_dir: str):
+    """
+    Filter values from MoleculeNet dataset where the data value is empty.
+    Relevant for the BBBP dataset.
+    """
+    return MoleculeNet(root=data_dir, name=dataset, pre_filter=_filter_empty_data)
+
+
+def _filter_empty_data(data) -> bool:
+    return data.x.size()[0] != 0
 
 
 def _get_dataloaders(dataset, batch_size):
