@@ -56,8 +56,8 @@ class Pretrain:
         self.model = PretrainModel(params["encoder"], params["dim_h"], params["dropout"])
         self.model.load_state_dict(torch.load(weights_file_path))
 
-    def load_random_model(self, embedding_model, dim_h, dropout) -> None:
-        self.model = PretrainModel(embedding_model, dim_h, dropout)
+    def load_random_model(self, encoder_model, dim_h, dropout) -> None:
+        self.model = PretrainModel(encoder_model, dim_h, dropout)
 
     def evaluate_model(self, datasets: list) -> None:
         # 1. Load dataset (EVAL)
@@ -90,7 +90,7 @@ class Pretrain:
 
     def _initialize_model(self) -> None:
         self.model = PretrainModel(
-            embedding_model=self.params["encoder"],
+            encoder=self.params["encoder"],
             dim_h=self.params["dim_h"],
             dropout=self.params["dropout"],
         )

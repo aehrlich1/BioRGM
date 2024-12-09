@@ -23,12 +23,12 @@ class PretrainModel(nn.Module):
     Combines the CategoricalEmbeddingModel and the GIN Model
     """
 
-    def __init__(self, embedding_model, dim_h, dropout):
+    def __init__(self, encoder, dim_h, dropout):
         super().__init__()
-        dim_in = embedding_model.get_feature_embedding_dim()
-        edge_dim = embedding_model.get_edge_embedding_dim()
+        dim_in = encoder.get_feature_embedding_dim()
+        edge_dim = encoder.get_edge_embedding_dim()
 
-        self.embedding_model = embedding_model
+        self.embedding_model = encoder
         self.gin_model = GIN(
             dim_in=dim_in,
             dim_h=dim_h,
@@ -46,25 +46,49 @@ class OneHotEncoderModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.num_node_categories = self._get_num_node_categories()
+        self.num_edge_categories = self._get_num_edge_categories()
 
-    def forward(self, x):
-        x_one_hot = [
+    def forward(self, data):
+        x = [
             torch.cat(
                 [
                     F.one_hot(row[i], num_classes=num)
                     for i, num in enumerate(self.num_node_categories)
                 ]
             )
-            for row in x
+            for row in data.x
         ]
 
-        return torch.stack(x_one_hot)
+        edge_attr = [
+            torch.cat(
+                [
+                    F.one_hot(row[i], num_classes=num)
+                    for i, num in enumerate(self.num_edge_categories)
+                ]
+            )
+            for row in data.edge_attr
+        ]
+
+        data.x = torch.stack(x).to(torch.float)
+        data.edge_attr = torch.stack(edge_attr).to(torch.float)
+
+        return data
+
+    def get_feature_embedding_dim(self):
+        return sum(self._get_num_node_categories())
+
+    def get_edge_embedding_dim(self):
+        return sum(self._get_num_edge_categories())
 
     @staticmethod
     def _get_num_node_categories() -> list[int]:
         return [
             len(pyg_smiles.x_map[prop]) for prop in pyg_smiles.x_map
         ]  # [119, 9, 11, 12, 9, 5, 8, 2, 2]
+
+    @staticmethod
+    def _get_num_edge_categories() -> list[int]:
+        return [len(pyg_smiles.e_map[prop]) for prop in pyg_smiles.e_map]  # [22, 6, 2]
 
 
 class CategoricalEncodingModel(nn.Module):

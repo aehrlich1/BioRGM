@@ -15,7 +15,6 @@ from src.models.model import FinetuneModel
 class FinetuneParams:
     batch_size: int
     dataset: str
-    encoding: str
     epochs: int
     freeze_pretrain: bool
     lr: float
