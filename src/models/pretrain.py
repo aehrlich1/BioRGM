@@ -9,7 +9,7 @@ from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, Base
 from torch_geometric.loader import DataLoader
 
 from src.data.data import PubchemDataset
-from src.models.model import Model
+from src.models.model import PretrainModel
 from src.utils import Checkpoint, read_config_file
 
 
@@ -53,11 +53,11 @@ class Pretrain:
         config_file_path = Path(self.data_dir) / "models" / model_name / "config_pretrain.yml"
         params: dict = read_config_file(config_file_path)
 
-        self.model = Model(params["dim_h"], params["dropout"])
+        self.model = PretrainModel(params["encoder"], params["dim_h"], params["dropout"])
         self.model.load_state_dict(torch.load(weights_file_path))
 
     def load_random_model(self, embedding_model, dim_h, dropout) -> None:
-        self.model = Model(embedding_model, dim_h, dropout)
+        self.model = PretrainModel(embedding_model, dim_h, dropout)
 
     def evaluate_model(self, datasets: list) -> None:
         # 1. Load dataset (EVAL)
@@ -89,7 +89,8 @@ class Pretrain:
         )
 
     def _initialize_model(self) -> None:
-        self.model = Model(
+        self.model = PretrainModel(
+            embedding_model=self.params["encoder"],
             dim_h=self.params["dim_h"],
             dropout=self.params["dropout"],
         )

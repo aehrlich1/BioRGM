@@ -18,7 +18,7 @@ def mlp(dim_in, dim_out):
     )
 
 
-class Model(nn.Module):
+class PretrainModel(nn.Module):
     """
     Combines the CategoricalEmbeddingModel and the GIN Model
     """
@@ -40,12 +40,6 @@ class Model(nn.Module):
         data = self.embedding_model(data)
         h = self.gin_model(data)
         return h
-
-    def _get_feature_embedding_dims(self):
-        return (
-            self.node_embedding.get_node_feature_dim(),
-            self.edge_embedding.get_edge_feature_dim(),
-        )
 
 
 class OneHotEncoderModel(nn.Module):
