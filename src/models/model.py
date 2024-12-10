@@ -197,6 +197,19 @@ class ExtendedConnectivityFingerprintModel:
         return ecfps
 
 
+class EcfpModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.ecfp_model = ExtendedConnectivityFingerprintModel()
+        self.linear = nn.Linear(1024, 128)
+
+    def forward(self, data):
+        ecfps = self.ecfp_model(data)
+        h = torch.tensor(ecfps, dtype=torch.float32)
+
+        return self.linear(h)
+
+
 class ProjectionHead(nn.Module):
     def __init__(self, out_dim):
         super().__init__()
