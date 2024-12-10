@@ -14,7 +14,7 @@ def test_finetune():
         batch_size=32,
         dataset="BACE",
         epochs=200,
-        freeze_pretrain=False,
+        freeze_pretrain=True,
         lr=1e-5,
     )
 
@@ -32,7 +32,7 @@ def test_finetune_one_hot():
         batch_size=32,
         dataset="BACE",
         epochs=200,
-        freeze_pretrain=False,
+        freeze_pretrain=True,
         lr=1e-5,
     )
 

@@ -41,6 +41,13 @@ class PretrainModel(nn.Module):
         h = self.gin_model(data)
         return h
 
+    def freeze(self):
+        for param in self.embedding_model.parameters():
+            param.requires_grad = False
+
+        for param in self.gin_model.parameters():
+            param.requires_grad = False
+
 
 class OneHotEncoderModel(nn.Module):
     def __init__(self):
