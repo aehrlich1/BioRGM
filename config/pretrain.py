@@ -7,9 +7,9 @@ params = {
     "margin": 0.4,
     "epochs": 3,
     "distance_metric": "cosine",
-    "learning_rate": 1e-4,
+    "learning_rate": 1e-5,
     "weight_decay": 5e-4,
     "num_samples_per_class": 4,
     "type_of_triplets": "all",
-    "file_name": "pubchem_1m_triplets.csv"
+    "file_name": "pubchem_100k_triplets.csv"
 }
