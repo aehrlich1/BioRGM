@@ -9,7 +9,7 @@ from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, Base
 from torch_geometric.loader import DataLoader
 
 from src.data.data import PubchemDataset
-from src.models.model import PretrainModel
+from src.models.model import PretrainModel, CategoricalEncodingModel, OneHotEncoderModel
 from src.utils import Checkpoint, read_config_file
 
 
@@ -19,6 +19,7 @@ class Pretrain:
         self.data_dir = data_dir
         self.dataset = None
         self.dataloader = None
+        self.encoder_model = None
         self.model = None
         self.optimizer = None
         self.scheduler = None
@@ -42,6 +43,7 @@ class Pretrain:
         self._initialize_dataset()
         self._initialize_sampler()
         self._initialize_dataloader()
+        self._initialize_encoder_model()
         self._initialize_model()
         self._initialize_loss_fn()
         self._initialize_optimizer()
@@ -50,10 +52,13 @@ class Pretrain:
 
     def load_pretrained_model(self, model_name) -> None:
         weights_file_path = Path(self.data_dir) / "models" / model_name / "epoch_2.pth"
-        config_file_path = Path(self.data_dir) / "models" / model_name / "config_pretrain.yml"
+        config_file_path = (
+            Path(self.data_dir) / "models" / model_name / "config_pretrain.yml"
+        )
         params: dict = read_config_file(config_file_path)
 
-        self.model = PretrainModel(params["encoder"], params["dim_h"], params["dropout"])
+        encoder_model = self._get_encoder_model(params["encoder"])
+        self.model = PretrainModel(encoder_model, params["dim_h"], params["dropout"])
         self.model.load_state_dict(torch.load(weights_file_path))
 
     def load_random_model(self, encoder_model, dim_h, dropout) -> None:
@@ -88,9 +93,12 @@ class Pretrain:
             sampler=self.sampler,
         )
 
+    def _initialize_encoder_model(self) -> None:
+        self.encoder_model = self._get_encoder_model(self.params["encoder"])
+
     def _initialize_model(self) -> None:
         self.model = PretrainModel(
-            encoder=self.params["encoder"],
+            encoder=self.encoder_model,
             dim_h=self.params["dim_h"],
             dropout=self.params["dropout"],
         )
@@ -126,6 +134,14 @@ class Pretrain:
     def _initialize_checkpoint(self) -> None:
         output_dir = wandb.run.name
         self.checkpoint = Checkpoint(self.data_dir, self.params, output_dir)
+
+    def _get_encoder_model(self, encoder_name):
+        if encoder_name == "embedding":
+            return CategoricalEncodingModel()
+        elif encoder_name == "one_hot":
+            return OneHotEncoderModel()
+        else:
+            raise NotImplementedError
 
     def _get_distance_metric(self) -> BaseDistance:
         match self.params["distance_metric"]:

@@ -3,7 +3,7 @@ from src.models.pretrain import Pretrain
 from src.models.finetune import finetune, FinetuneParams
 
 
-def test_finetune():
+def test_finetune_model_with_random_pretrain_model_and_categorical_encoding():
     encoder_model = CategoricalEncodingModel()
     pretrain = Pretrain()
 
@@ -12,14 +12,31 @@ def test_finetune():
 
     finetune_params = FinetuneParams(
         batch_size=32,
-        dataset="BACE",
+        dataset="HIV",
         epochs=200,
-        freeze_pretrain=True,
+        freeze_pretrain=False,
         lr=1e-5,
     )
 
     finetune(pretrain_model, finetune_params, "../data/molecule_net")
 
+
+def test_finetune_pretrain():
+    # pretrain = Pretrain(data_dir="../data")
+    pretrain = Pretrain(data_dir="/mnt/data/anatole93dm/BioRGM/data")
+
+    pretrain.load_pretrained_model("silver-bush-22")
+    pretrain_model = pretrain.model
+
+    finetune_params = FinetuneParams(
+        batch_size=32,
+        dataset="HIV",
+        epochs=200,
+        freeze_pretrain=False,
+        lr=1e-5,
+    )
+
+    finetune(pretrain_model, finetune_params, "../data/molecule_net")
 
 def test_finetune_one_hot():
     encoder_model = OneHotEncoderModel()
@@ -44,7 +61,7 @@ def test_finetune_ecfp():
 
     finetune_params = FinetuneParams(
         batch_size=32,
-        dataset="BACE",
+        dataset="HIV",
         epochs=200,
         freeze_pretrain=False,
         lr=1e-5,
