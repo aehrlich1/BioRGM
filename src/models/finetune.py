@@ -67,8 +67,8 @@ def _test_loop(model, dataloader, loss_fn, epoch):
             out = model(data)
             loss = loss_fn(out, data.y)
             batch_loss += loss.item()
-            y_true.append(data.y.view(-1))
-            y_pred.append(out.view(-1))
+            y_true.append(data.y)
+            y_pred.append(out)
 
     y_true = torch.cat(y_true)
     y_pred = torch.cat(y_pred)
