@@ -13,6 +13,9 @@ from src.models.model import PretrainModel, CategoricalEncodingModel, OneHotEnco
 from src.utils import Checkpoint, read_config_file
 
 
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
 class Pretrain:
     def __init__(self, params: dict = None, data_dir=None):
         self.params = params
@@ -62,7 +65,7 @@ class Pretrain:
         self.model.load_state_dict(torch.load(weights_file_path))
 
     def load_random_model(self, encoder_model, dim_h, dropout) -> None:
-        self.model = PretrainModel(encoder_model, dim_h, dropout)
+        self.model = PretrainModel(encoder_model, dim_h, dropout).to(device)
 
     def evaluate_model(self, datasets: list) -> None:
         # 1. Load dataset (EVAL)
@@ -94,14 +97,14 @@ class Pretrain:
         )
 
     def _initialize_encoder_model(self) -> None:
-        self.encoder_model = self._get_encoder_model(self.params["encoder"])
+        self.encoder_model = self._get_encoder_model(self.params["encoder"]).to(device)
 
     def _initialize_model(self) -> None:
         self.model = PretrainModel(
             encoder=self.encoder_model,
             dim_h=self.params["dim_h"],
             dropout=self.params["dropout"],
-        )
+        ).to(device)
 
     def _initialize_loss_fn(self) -> None:
         self.loss_fn = losses.TripletMarginLoss(
@@ -155,7 +158,7 @@ class Pretrain:
 
     def _train_loop(self) -> None:
         for i, data in enumerate(self.dataloader):
-            label, data = data.y, data
+            label, data = data.y.to(device), data.to(device)
             embeddings = self.model(data)
 
             indices_tuple = self.mining_fn(embeddings, label)

@@ -1,14 +1,17 @@
+import torch
 from src.models.model import CategoricalEncodingModel, OneHotEncoderModel, EcfpModel
 from src.models.pretrain import Pretrain
 from src.models.finetune import finetune, FinetuneParams
 
 
 def test_finetune_model_with_random_pretrain_model_and_categorical_encoding():
-    encoder_model = CategoricalEncodingModel()
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+    encoder_model = CategoricalEncodingModel().to(device)
     pretrain = Pretrain()
 
     pretrain.load_random_model(encoder_model=encoder_model, dim_h=128, dropout=0.1)
-    pretrain_model = pretrain.model
+    pretrain_model = pretrain.model.to(device)
 
     finetune_params = FinetuneParams(
         batch_size=32,
@@ -30,7 +33,7 @@ def test_finetune_pretrain():
 
     finetune_params = FinetuneParams(
         batch_size=32,
-        dataset="HIV",
+        dataset="ClinTox",
         epochs=200,
         freeze_pretrain=False,
         lr=1e-5,
@@ -61,7 +64,7 @@ def test_finetune_ecfp():
 
     finetune_params = FinetuneParams(
         batch_size=32,
-        dataset="HIV",
+        dataset="ClinTox",
         epochs=200,
         freeze_pretrain=False,
         lr=1e-5,

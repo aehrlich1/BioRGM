@@ -22,6 +22,10 @@ class FinetuneParams:
     pretrain_model: str = "Random"
 
 
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+print(f"Using {device} device")
+
+
 def finetune(pretrain_model, params: FinetuneParams, data_dir: str) -> None:
     wandb.init(project="BioRGM_finetune", config=asdict(params), mode="offline")
 
@@ -42,10 +46,12 @@ def finetune(pretrain_model, params: FinetuneParams, data_dir: str) -> None:
 
 
 def _train_loop(model, dataloader, optimizer, loss_fn, epoch):
+    model.to(device)
     model.train()
     batch_loss = 0
 
     for data in dataloader:
+        data = data.to(device)
         out = model(data)
         loss = loss_fn(out, data.y)
         batch_loss += loss.item()
@@ -64,14 +70,15 @@ def _test_loop(model, dataloader, loss_fn, epoch):
 
     with torch.no_grad():
         for data in dataloader:
+            data = data.to(device)
             out = model(data)
             loss = loss_fn(out, data.y)
             batch_loss += loss.item()
             y_true.append(data.y)
             y_pred.append(out)
 
-    y_true = torch.cat(y_true)
-    y_pred = torch.cat(y_pred)
+    y_true = torch.cat(y_true).cpu().numpy()
+    y_pred = torch.cat(y_pred).cpu().numpy()
     average_loss = batch_loss / len(dataloader)
     roc_auc = roc_auc_score(y_true, y_pred)
 
@@ -108,7 +115,7 @@ def _get_num_output_tasks(dataset):
 
 
 def _initialize_finetune_model(pretrain_model, out_dim: int, freeze_pretrain: bool):
-    model = FinetuneModel(pretrain_model, out_dim=out_dim)
+    model = FinetuneModel(pretrain_model, out_dim=out_dim).to(device)
     if freeze_pretrain:
         model.pretrain_model.freeze()
 

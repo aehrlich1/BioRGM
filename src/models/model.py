@@ -8,6 +8,9 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 
 
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
 def mlp(dim_in, dim_out):
     return nn.Sequential(
         nn.Linear(dim_in, dim_out),
@@ -28,13 +31,13 @@ class PretrainModel(nn.Module):
         dim_in = encoder.get_feature_embedding_dim()
         edge_dim = encoder.get_edge_embedding_dim()
 
-        self.embedding_model = encoder
+        self.embedding_model = encoder.to(device)
         self.gin_model = GIN(
             dim_in=dim_in,
             dim_h=dim_h,
             edge_dim=edge_dim,
             dropout=dropout,
-        )
+        ).to(device)
 
     def forward(self, data):
         data = self.embedding_model(data)
@@ -101,8 +104,8 @@ class OneHotEncoderModel(nn.Module):
 class CategoricalEncodingModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.node_embedding = CategoricalEmbeddingModel(category_type="node")
-        self.edge_embedding = CategoricalEmbeddingModel(category_type="edge")
+        self.node_embedding = CategoricalEmbeddingModel(category_type="node").to(device)
+        self.edge_embedding = CategoricalEmbeddingModel(category_type="edge").to(device)
 
     def forward(self, data):
         data.x = self.node_embedding(data.x)
@@ -230,7 +233,7 @@ class FinetuneModel(nn.Module):
     def __init__(self, pretrain_model, out_dim):
         super().__init__()
         self.pretrain_model = pretrain_model
-        self.projection_head = ProjectionHead(out_dim)
+        self.projection_head = ProjectionHead(out_dim).to(device)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, data):
