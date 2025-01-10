@@ -15,9 +15,9 @@ def test_finetune_model_with_random_pretrain_model_and_categorical_encoding():
 
     finetune_params = FinetuneParams(
         batch_size=32,
-        dataset="HIV",
-        epochs=200,
-        freeze_pretrain=False,
+        dataset="BACE",
+        epochs=300,
+        freeze_pretrain=True,
         lr=1e-5,
     )
 
@@ -28,14 +28,14 @@ def test_finetune_pretrain():
     # pretrain = Pretrain(data_dir="../data")
     pretrain = Pretrain(data_dir="/mnt/data/anatole93dm/BioRGM/data")
 
-    pretrain.load_pretrained_model("silver-bush-22")
+    pretrain.load_pretrained_model("eager-firebrand-39")
     pretrain_model = pretrain.model
 
     finetune_params = FinetuneParams(
         batch_size=32,
-        dataset="ClinTox",
+        dataset="HIV",
         epochs=200,
-        freeze_pretrain=False,
+        freeze_pretrain=True,
         lr=1e-5,
     )
 
@@ -65,7 +65,7 @@ def test_finetune_ecfp():
     finetune_params = FinetuneParams(
         batch_size=32,
         dataset="ClinTox",
-        epochs=200,
+        epochs=5000,
         freeze_pretrain=False,
         lr=1e-5,
     )
