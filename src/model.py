@@ -1,12 +1,12 @@
 import sys
+
 import torch
 import torch.nn.functional as F
 import torch_geometric.utils.smiles as pyg_smiles
-from torch import nn
-from torch_geometric.nn import GINEConv, global_add_pool
 from rdkit import Chem
 from rdkit.Chem import AllChem
-
+from torch import nn
+from torch_geometric.nn import GINEConv, global_add_pool
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 

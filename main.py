@@ -1,5 +1,6 @@
 import argparse
 
+from src.finetune import Finetune
 from src.augmentation import Augmentation
 from src.pretrain import Pretrain
 from src.utils import load_yaml_to_dict
@@ -21,7 +22,8 @@ def main(args: dict) -> None:
             pretrain.initialize_for_training()
             pretrain.train()
         case "finetune":
-            print("Not implemented.")
+            finetune = Finetune(params, data_dir)
+            finetune.train()
 
     print("Done")
 

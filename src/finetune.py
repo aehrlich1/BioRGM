@@ -1,49 +1,135 @@
+from dataclasses import dataclass, asdict
+from pathlib import Path
+
 import torch
 import wandb
-from torchinfo import summary
-from dataclasses import dataclass, asdict
-from torch.optim import Adam
 from sklearn.metrics import roc_auc_score
 from torch.nn import BCELoss
+from torch.optim import Adam
 from torch.utils.data import random_split
 from torch_geometric.datasets import MoleculeNet
 from torch_geometric.loader import DataLoader
+from torchinfo import summary
 
-from src.model import FinetuneModel
-
-
-@dataclass
-class FinetuneParams:
-    batch_size: int
-    dataset: str
-    epochs: int
-    freeze_pretrain: bool
-    lr: float
-    classifier: str = "MLP, SVM, Linear, ..."
-    pretrain_model: str = "Random"
+from src.model import FinetuneModel, CategoricalEncodingModel
+from src.pretrain import Pretrain
 
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
-print(f"Using {device} device")
 
 
-def finetune(pretrain_model, params: FinetuneParams, data_dir: str) -> None:
-    wandb.init(project="BioRGM_finetune", config=asdict(params), mode="online")
+class Finetune:
+    def __init__(self, params: dict = None, data_dir=None):
+        self.params = params
+        self.data_dir = data_dir
+        self.dataset = None
+        self.train_dataloader = None
+        self.test_dataloader = None
+        self.device = None
+        self.finetune_model = None
+        self.loss_fn = None
+        self.num_output_tasks = None
+        self.optimizer = None
+        self.pretrain_model = None
 
-    dataset = _get_dataset(params.dataset, data_dir)
-    num_output_tasks = _get_num_output_tasks(dataset)
-    train_dataloader, test_dataloader = _get_dataloaders(dataset, params.batch_size)
-    finetune_model = _initialize_finetune_model(
-        pretrain_model, num_output_tasks, params.freeze_pretrain
-    )
-    optimizer = Adam(finetune_model.parameters(), lr=params.lr)
-    loss_fn = BCELoss()
+        self._initialize()
 
-    _test_loop(finetune_model, test_dataloader, loss_fn, epoch=0)
-    for epoch in range(params.epochs):
-        print(f"\nEpoch {epoch+1}\n-------------------------------\n")
-        _train_loop(finetune_model, train_dataloader, optimizer, loss_fn, epoch)
-        _test_loop(finetune_model, test_dataloader, loss_fn, epoch)
+    def _initialize(self) -> None:
+        self._initialize_wandb()
+        self._initialize_device()
+        self._initialize_dataset()
+        self._initialize_dataloaders()
+        self._initialize_num_output_tasks()
+        self._initialize_pretrain_model()
+        self._initialize_finetune_model()
+        self._initialize_optimizer()
+        self._initialize_loss_fn()
+
+    def train(self) -> None:
+        self.finetune_model.train()
+
+        for epoch in range(self.params["epochs"]):
+            print(f"\nEpoch {epoch + 1}\n-------------------------------\n")
+            _train_loop(
+                self.finetune_model,
+                self.train_dataloader,
+                self.optimizer,
+                self.loss_fn,
+                epoch,
+            )
+            _test_loop(self.finetune_model, self.test_dataloader, self.loss_fn, epoch)
+
+    def _initialize_wandb(self) -> None:
+        wandb.init(project="BioRGM", config=self.params, mode="online")
+
+    def _initialize_device(self) -> None:
+        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        print(f"Using device: {self.device}")
+
+    def _initialize_dataset(self) -> None:
+        moleculeNet_data_dir = Path(self.data_dir) / "molecule_net"
+        self.dataset = self._get_dataset(moleculeNet_data_dir=moleculeNet_data_dir)
+
+    def _initialize_dataloaders(self) -> None:
+        self.train_dataloader, self.test_dataloader = self._get_dataloaders()
+
+    def _initialize_num_output_tasks(self) -> None:
+        self.num_output_tasks = torch.numel(self.dataset[0].y)
+
+    def _initialize_pretrain_model(self) -> None:
+        pretrain = Pretrain(data_dir=self.data_dir)
+
+        if self.params["pretrain_model"] is None:
+            encoder_model = CategoricalEncodingModel().to(self.device)
+            # TODO: Add parameter within config_finetune.yml for pretrain dropout
+            pretrain.load_random_model(
+                encoder_model=encoder_model, dim_h=self.params["dim_h"], dropout=0.1
+            )
+        else:
+            pretrain.load_pretrained_model(self.params["pretrain_model"])
+
+        self.pretrain_model = pretrain.model
+
+    def _initialize_finetune_model(self) -> None:
+        model = FinetuneModel(self.pretrain_model, out_dim=self.num_output_tasks).to(
+            self.device
+        )
+        if self.params["freeze_pretrain"]:
+            model.pretrain_model.freeze()
+
+        summary(model)
+        self.finetune_model = model
+
+    def _initialize_optimizer(self) -> None:
+        self.optimizer = Adam(self.finetune_model.parameters(), lr=self.params["lr"])
+
+    def _initialize_loss_fn(self) -> None:
+        self.loss_fn = BCELoss()
+
+    def _get_dataloaders(self):
+        train_dataset, test_dataset = random_split(
+            dataset=self.dataset, lengths=[0.8, 0.2]
+        )
+
+        train_dataloader = DataLoader(
+            train_dataset, batch_size=self.params["batch_size"], shuffle=True
+        )
+        test_dataloader = DataLoader(
+            test_dataset, batch_size=self.params["batch_size"], shuffle=False
+        )
+
+        return train_dataloader, test_dataloader
+
+    def _get_dataset(self, moleculeNet_data_dir):
+        """
+        Filter values from MoleculeNet dataset where the data value is empty.
+        Relevant for the BBBP dataset.
+        """
+        return MoleculeNet(
+            root=moleculeNet_data_dir,
+            name=self.params["dataset"],
+            pre_filter=_filter_empty_data,
+        )
 
 
 def _train_loop(model, dataloader, optimizer, loss_fn, epoch):
@@ -90,35 +176,5 @@ def _test_loop(model, dataloader, loss_fn, epoch):
     return average_loss, roc_auc
 
 
-def _get_dataset(dataset: str, data_dir: str):
-    """
-    Filter values from MoleculeNet dataset where the data value is empty.
-    Relevant for the BBBP dataset.
-    """
-    return MoleculeNet(root=data_dir, name=dataset, pre_filter=_filter_empty_data)
-
-
 def _filter_empty_data(data) -> bool:
     return data.x.size()[0] != 0
-
-
-def _get_dataloaders(dataset, batch_size):
-    train_dataset, test_dataset = random_split(dataset=dataset, lengths=[0.8, 0.2])
-
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-    return train_dataloader, test_dataloader
-
-
-def _get_num_output_tasks(dataset):
-    return torch.numel(dataset[0].y)
-
-
-def _initialize_finetune_model(pretrain_model, out_dim: int, freeze_pretrain: bool):
-    model = FinetuneModel(pretrain_model, out_dim=out_dim).to(device)
-    if freeze_pretrain:
-        model.pretrain_model.freeze()
-
-    summary(model)
-    return model
