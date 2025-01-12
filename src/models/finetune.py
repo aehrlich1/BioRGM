@@ -1,5 +1,6 @@
 import torch
 import wandb
+from torchinfo import summary
 from dataclasses import dataclass, asdict
 from torch.optim import Adam
 from sklearn.metrics import roc_auc_score
@@ -27,7 +28,7 @@ print(f"Using {device} device")
 
 
 def finetune(pretrain_model, params: FinetuneParams, data_dir: str) -> None:
-    wandb.init(project="BioRGM_finetune", config=asdict(params), mode="offline")
+    wandb.init(project="BioRGM_finetune", config=asdict(params), mode="online")
 
     dataset = _get_dataset(params.dataset, data_dir)
     num_output_tasks = _get_num_output_tasks(dataset)
@@ -119,4 +120,5 @@ def _initialize_finetune_model(pretrain_model, out_dim: int, freeze_pretrain: bo
     if freeze_pretrain:
         model.pretrain_model.freeze()
 
+    summary(model)
     return model
