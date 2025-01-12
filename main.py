@@ -1,34 +1,47 @@
-import os
-import sys
-import logging.config
+import argparse
+
 from src.augmentations.augmentation import Augmentation
-from config.reactions import reaction_smarts_list
-from config.pretrain import params
 from src.models.pretrain import Pretrain
+from src.utils import load_yaml_to_dict
 
 
-def main(DATA_DIR):
-    DATA_DIR = os.path.abspath(DATA_DIR)
-    print(f"Data directory is: {DATA_DIR}")
+def main(args: dict) -> None:
+    config_filename = args["config_filename"]
+    data_dir = args["data_dir"]
 
-    # Augmentation
-    augmentation = Augmentation(
-        input_filename="pubchem_1k.txt", root_data_dir=DATA_DIR, processes=None
-    )
-    augmentation.register_reaction_smarts(reaction_smarts_list)
-    augmentation.start()
+    params: dict = load_yaml_to_dict(config_filename)
+    print(f"Data directory is: {data_dir}")
 
-    # Pretraining
-    pretrain = Pretrain(params, DATA_DIR)
-    pretrain.initialize_for_training()
-    pretrain.train()
+    match params["task"]:
+        case "augmentation":
+            augmentation = Augmentation(params, data_dir)
+            augmentation.start()
+        case "pretrain":
+            pretrain = Pretrain(params, data_dir)
+            pretrain.initialize_for_training()
+            pretrain.train()
+        case "finetune":
+            print("Not implemented.")
 
     print("Done")
 
 
 if __name__ == "__main__":
-    DATA_DIR = sys.argv[1]
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    logging.config.fileConfig("./config/logging.conf")
+    parser = argparse.ArgumentParser(description="Config file and data directory.")
+    parser.add_argument(
+        "--config_filename",
+        type=str,
+        required=True,
+        help="File name (including extension) of the yaml configuration file.",
+    )
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        required=True,
+        help="Absolute path of the directory of the dataset.",
+    )
 
-    main(DATA_DIR)
+    input_args = parser.parse_args()
+    input_args_dict = vars(input_args)
+
+    main(input_args_dict)

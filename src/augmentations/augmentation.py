@@ -1,4 +1,3 @@
-import logging
 import os
 import random
 from multiprocessing import Pool
@@ -8,21 +7,20 @@ from rdkit import Chem
 from rdkit import RDLogger
 from rdkit.Chem import AllChem
 from rdkit.Chem import Mol
+from config.reactions import reaction_smarts_list
 
 from src.utils import neutralize_smiles
 
 RDLogger.DisableLog("rdApp.*")
-logger = logging.getLogger("BioRGM")
 
 
 class Augmentation:
-    def __init__(self, input_filename: str, root_data_dir: str, processes=None):
-        self.input_filename = Path(input_filename).stem
-        self.root_data_dir = root_data_dir
-        self.input_file: str = os.path.join(root_data_dir, "raw", input_filename)
-        self.processes: int = processes
-        self.reaction_smarts: list[str] = []
-        self.reaction_stats: dict[str, int] = {}
+    def __init__(self, params: dict, data_dir: str):
+        self.input_filename = Path(params["input_filename"]).stem
+        self.input_file = Path(data_dir) / "raw" /  params["input_filename"]
+        self.root_data_dir = data_dir
+        self.processes = params["processes"]
+        self.reaction_smarts = reaction_smarts_list
 
     def start(self) -> None:
         """
