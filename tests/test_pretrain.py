@@ -1,5 +1,4 @@
-import os
-from src.models.pretrain import Pretrain
+from src.pretrain import Pretrain
 
 def test_pretrain():
     config = {

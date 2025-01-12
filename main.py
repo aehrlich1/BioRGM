@@ -1,7 +1,7 @@
 import argparse
 
-from src.augmentations.augmentation import Augmentation
-from src.models.pretrain import Pretrain
+from src.augmentation import Augmentation
+from src.pretrain import Pretrain
 from src.utils import load_yaml_to_dict
 
 

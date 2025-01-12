@@ -7,8 +7,8 @@ from rdkit import Chem
 from rdkit import RDLogger
 from rdkit.Chem import AllChem
 from rdkit.Chem import Mol
-from config.reactions import reaction_smarts_list
 
+from config.reactions import reaction_smarts_list
 from src.utils import neutralize_smiles
 
 RDLogger.DisableLog("rdApp.*")
@@ -17,8 +17,8 @@ RDLogger.DisableLog("rdApp.*")
 class Augmentation:
     def __init__(self, params: dict, data_dir: str):
         self.input_filename = Path(params["input_filename"]).stem
-        self.input_file = Path(data_dir) / "raw" /  params["input_filename"]
-        self.root_data_dir = data_dir
+        self.input_file = Path(data_dir) / "raw" / params["input_filename"]
+        self.data_dir = data_dir
         self.processes = params["processes"]
         self.reaction_smarts = reaction_smarts_list
 
@@ -92,7 +92,7 @@ class Augmentation:
         return header
 
     def save_to_file(self, filename, header: str, data: list[list[str]]) -> None:
-        folder = os.path.join(self.root_data_dir, "processed/")
+        folder = Path(self.data_dir) / "processed"
         os.makedirs(folder, exist_ok=True)
         filename = os.path.join(folder, filename)
 

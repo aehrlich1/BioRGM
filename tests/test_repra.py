@@ -1,7 +1,7 @@
 import os
-from src.analysis.repra import Repra
-from src.models.model import ExtendedConnectivityFingerprintModel
-from src.models.pretrain import Pretrain
+from src.repra import Repra
+from src.model import ExtendedConnectivityFingerprintModel
+from src.pretrain import Pretrain
 
 
 def test_repra_fp():

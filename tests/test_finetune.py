@@ -1,7 +1,7 @@
 import torch
-from src.models.model import CategoricalEncodingModel, OneHotEncoderModel, EcfpModel
-from src.models.pretrain import Pretrain
-from src.models.finetune import finetune, FinetuneParams
+from src.model import CategoricalEncodingModel, OneHotEncoderModel, EcfpModel
+from src.pretrain import Pretrain
+from src.finetune import finetune, FinetuneParams
 
 
 def test_finetune_model_with_random_pretrain_model_and_categorical_encoding():

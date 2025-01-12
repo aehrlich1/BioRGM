@@ -9,8 +9,8 @@ from pytorch_metric_learning import losses, miners, samplers
 from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, BaseDistance
 from torch_geometric.loader import DataLoader
 
-from src.data.data import PubchemDataset
-from src.models.model import PretrainModel, CategoricalEncodingModel, OneHotEncoderModel
+from src.data import PubchemDataset
+from src.model import PretrainModel, CategoricalEncodingModel, OneHotEncoderModel
 from src.utils import Checkpoint, read_config_file
 
 
@@ -20,7 +20,7 @@ class Pretrain:
         self.data_dir = data_dir
         self.dataset = None
         self.dataloader = None
-        self.device = self._initialize_device()
+        self.device = None
         self.encoder_model = None
         self.model = None
         self.optimizer = None
@@ -29,6 +29,8 @@ class Pretrain:
         self.loss_fn = None
         self.mining_fn = None
         self.checkpoint = None
+
+        self._initialize_device()
 
     def train(self) -> None:
         self.model.train()
@@ -70,7 +72,7 @@ class Pretrain:
     def evaluate_model(self, datasets: list) -> None:
         pass
 
-    def _initialize_wandb(self):
+    def _initialize_wandb(self) -> None:
         wandb.init(project="BioRGM", config=self.params, mode="online")
 
     def _initialize_dataset(self) -> None:
@@ -87,14 +89,14 @@ class Pretrain:
             sampler=self.sampler,
         )
 
-    def _initialize_device(self) -> str:
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        print(f"Using device: {device}")
-
-        return device
+    def _initialize_device(self) -> None:
+        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        print(f"Using device: {self.device}")
 
     def _initialize_encoder_model(self) -> None:
-        self.encoder_model = self._get_encoder_model(self.params["encoder"]).to(self.device)
+        self.encoder_model = self._get_encoder_model(self.params["encoder"]).to(
+            self.device
+        )
 
     def _initialize_model(self) -> None:
         self.model = PretrainModel(
