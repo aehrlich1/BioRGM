@@ -1,6 +1,7 @@
 import os
 import sys
 
+import argparse
 import wandb
 import torch
 from pathlib import Path
@@ -13,15 +14,13 @@ from src.models.model import PretrainModel, CategoricalEncodingModel, OneHotEnco
 from src.utils import Checkpoint, read_config_file
 
 
-device = "cuda:0" if torch.cuda.is_available() else "cpu"
-
-
 class Pretrain:
     def __init__(self, params: dict = None, data_dir=None):
         self.params = params
         self.data_dir = data_dir
         self.dataset = None
         self.dataloader = None
+        self.device = self._initialize_device()
         self.encoder_model = None
         self.model = None
         self.optimizer = None
@@ -54,7 +53,8 @@ class Pretrain:
         self._initialize_checkpoint()
 
     def load_pretrained_model(self, model_name) -> None:
-        weights_file_path = Path(self.data_dir) / "models" / model_name / "epoch_2.pth"
+        # TODO: epoch should be a parameter
+        weights_file_path = Path(self.data_dir) / "models" / model_name / "epoch_5.pth"
         config_file_path = (
             Path(self.data_dir) / "models" / model_name / "config_pretrain.yml"
         )
@@ -65,22 +65,13 @@ class Pretrain:
         self.model.load_state_dict(torch.load(weights_file_path))
 
     def load_random_model(self, encoder_model, dim_h, dropout) -> None:
-        self.model = PretrainModel(encoder_model, dim_h, dropout).to(device)
+        self.model = PretrainModel(encoder_model, dim_h, dropout).to(self.device)
 
     def evaluate_model(self, datasets: list) -> None:
-        # 1. Load dataset (EVAL)
-        # 2. Pass the dataset through the pre-trained model
-        # and obtain embeddings. batch_size=len(dataset)
-        # 3. Append embeddings to the Data object
-        # 4. Calculate cosine pairwise distances for embeddings
-        # 5. Calculate euclidean distances of target properties
-        # x. Calculate Improvement Rate S_IR
-        # x. Calculate Average Deviation S_AD
-        # return: a dictionary {"ESOL": {S_IR: 1.0, S_ID: 1.2}, "FreeSolv": {...}}
         pass
 
     def _initialize_wandb(self):
-        wandb.init(project="BioRGM", config=self.params)
+        wandb.init(project="BioRGM", config=self.params, mode="online")
 
     def _initialize_dataset(self) -> None:
         self.dataset = PubchemDataset(
@@ -96,15 +87,21 @@ class Pretrain:
             sampler=self.sampler,
         )
 
+    def _initialize_device(self) -> str:
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        print(f"Using device: {device}")
+
+        return device
+
     def _initialize_encoder_model(self) -> None:
-        self.encoder_model = self._get_encoder_model(self.params["encoder"]).to(device)
+        self.encoder_model = self._get_encoder_model(self.params["encoder"]).to(self.device)
 
     def _initialize_model(self) -> None:
         self.model = PretrainModel(
             encoder=self.encoder_model,
             dim_h=self.params["dim_h"],
             dropout=self.params["dropout"],
-        ).to(device)
+        ).to(self.device)
 
     def _initialize_loss_fn(self) -> None:
         self.loss_fn = losses.TripletMarginLoss(
@@ -114,8 +111,8 @@ class Pretrain:
 
     def _initialize_optimizer(self) -> None:
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(),
-            lr=self.params["learning_rate"],
+            params=self.model.parameters(),
+            lr=self.params["lr"],
             weight_decay=self.params["weight_decay"],
         )
 
@@ -135,8 +132,8 @@ class Pretrain:
         )
 
     def _initialize_checkpoint(self) -> None:
-        output_dir = wandb.run.name
-        self.checkpoint = Checkpoint(self.data_dir, self.params, output_dir)
+        output_dir_name = wandb.run.name
+        self.checkpoint = Checkpoint(self.data_dir, self.params, output_dir_name)
 
     def _get_encoder_model(self, encoder_name):
         if encoder_name == "embedding":
@@ -158,7 +155,7 @@ class Pretrain:
 
     def _train_loop(self) -> None:
         for i, data in enumerate(self.dataloader):
-            label, data = data.y.to(device), data.to(device)
+            label, data = data.y.to(self.device), data.to(self.device)
             embeddings = self.model(data)
 
             indices_tuple = self.mining_fn(embeddings, label)
@@ -173,3 +170,121 @@ class Pretrain:
                     f"Iteration {i}: Loss = {loss:.3g}, Mined triplets = {self.mining_fn.num_triplets}"
                 )
                 wandb.log({"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets})
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Train a model with specific hyperparameters."
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        required=False,
+        default=32,
+        help="Batch size for training.",
+    )
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        required=True,
+        help="Absolute path to Root directory of dataset.",
+    )
+    parser.add_argument(
+        "--dim_h",
+        type=int,
+        required=False,
+        default=128,
+        help="Hidden dimensions size.",
+    )
+    parser.add_argument(
+        "--distance_metric",
+        type=str,
+        required=False,
+        default="euclidean",
+        help="Distance metric.",
+    )
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        required=False,
+        default=0.1,
+        help="Dropout ratio.",
+    )
+    parser.add_argument(
+        "--encoder",
+        type=str,
+        required=False,
+        default="embedding",
+        help="Which encoder to use",
+        choices=["embedding", "one_hot"],
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        required=False,
+        default=5,
+        help="Number of epochs.",
+    )
+    parser.add_argument(
+        "--file_name",
+        type=str,
+        required=True,
+        default=5,
+        help="File name (including extension) of the triplet dataset.",
+    )
+    parser.add_argument(
+        "--finetune",
+        type=bool,
+        required=False,
+        default=False,
+        help="Whether to finetune and evaluate the model after each epoch.",
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        required=False,
+        default="1e-6",
+        help="Learning rate.",
+    )
+    parser.add_argument(
+        "--margin",
+        type=float,
+        required=False,
+        default="0.1",
+        help="Margin.",
+    )
+    parser.add_argument(
+        "--num_samples_per_class",
+        type=int,
+        required=False,
+        default="4",
+        help="Number of samples per class.",
+    )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        required=False,
+        default="0",
+        help="Number of workers.",
+    )
+    parser.add_argument(
+        "--type_of_triplets",
+        type=str,
+        required=False,
+        default="all",
+        help="Type of triplets.",
+    )
+    parser.add_argument(
+        "--weight_decay",
+        type=float,
+        required=False,
+        default="5e-4",
+        help="Weight decay.",
+    )
+
+    args = parser.parse_args()
+    args_dict = vars(args)
+
+    pretrain = Pretrain(params=args_dict, data_dir=args_dict["data_dir"])
+    pretrain.initialize_for_training()
+    pretrain.train()
