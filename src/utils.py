@@ -44,7 +44,9 @@ class Checkpoint:
             self.output_dir_name = tempfile.mkdtemp(
                 dir=os.path.join(self.data_dir, "models")
             )
-        self.output_dir_name = os.path.join(self.data_dir, "models", self.output_dir_name)
+        self.output_dir_name = os.path.join(
+            self.data_dir, "models", self.output_dir_name
+        )
         os.makedirs(self.output_dir_name)
 
     def _initialize_directory(self):

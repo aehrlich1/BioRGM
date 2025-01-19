@@ -234,7 +234,6 @@ class FinetuneModel(nn.Module):
         super().__init__()
         self.pretrain_model = pretrain_model
         self.projection_head = ProjectionHead(out_dim).to(device)
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, data):
         h_G = self.pretrain_model(data)
