@@ -131,7 +131,7 @@ class Finetune:
         batch_loss = 0
 
         for data in self.train_dataloader:
-            data = data.to(device)
+            data = data.to(self.device)
             out = self.finetune_model(data)
             loss = self.loss_fn(out, data.y)
             batch_loss += loss.item()
@@ -149,7 +149,7 @@ class Finetune:
 
         with torch.no_grad():
             for data in self.test_dataloader:
-                data = data.to(device)
+                data = data.to(self.device)
                 out = self.finetune_model(data)
                 loss = self.loss_fn(out, data.y)
                 batch_loss += loss.item()
