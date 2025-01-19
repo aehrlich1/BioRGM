@@ -32,16 +32,6 @@ class Pretrain:
 
         self._initialize_device()
 
-    def train(self) -> None:
-        self.model.train()
-
-        for epoch in range(self.params["epochs"]):
-            print(f"\nEpoch {epoch}\n" + "-" * 30)
-            self._train_loop()
-            self.checkpoint.save(self.model, epoch)
-
-        wandb.finish()
-
     def initialize_for_training(self) -> None:
         self._initialize_wandb()
         self._initialize_dataset()
@@ -53,6 +43,16 @@ class Pretrain:
         self._initialize_optimizer()
         self._initialize_mining_fn()
         self._initialize_checkpoint()
+
+    def train(self) -> None:
+        self.model.train()
+
+        for epoch in range(self.params["epochs"]):
+            print(f"\nEpoch {epoch}\n" + "-" * 30)
+            self._train_loop()
+            self.checkpoint.save(self.model, epoch)
+
+        wandb.finish()
 
     def load_pretrained_model(self, model_name) -> None:
         # TODO: epoch should be a parameter
@@ -70,6 +70,7 @@ class Pretrain:
         self.model = PretrainModel(encoder_model, dim_h, dropout).to(self.device)
 
     def evaluate_model(self, datasets: list) -> None:
+        # TODO: Implement evaluation
         pass
 
     def _initialize_wandb(self) -> None:

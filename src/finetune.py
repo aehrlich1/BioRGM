@@ -1,4 +1,3 @@
-from dataclasses import dataclass, asdict
 from pathlib import Path
 
 import torch
@@ -13,9 +12,6 @@ from torchinfo import summary
 
 from src.model import FinetuneModel, CategoricalEncodingModel
 from src.pretrain import Pretrain
-
-
-device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class Finetune:
@@ -50,14 +46,8 @@ class Finetune:
 
         for epoch in range(self.params["epochs"]):
             print(f"\nEpoch {epoch + 1}\n-------------------------------\n")
-            _train_loop(
-                self.finetune_model,
-                self.train_dataloader,
-                self.optimizer,
-                self.loss_fn,
-                epoch,
-            )
-            _test_loop(self.finetune_model, self.test_dataloader, self.loss_fn, epoch)
+            self._train_loop(epoch)
+            self._test_loop(epoch)
 
     def _initialize_wandb(self) -> None:
         wandb.init(project="BioRGM", config=self.params, mode="online")
@@ -67,8 +57,8 @@ class Finetune:
         print(f"Using device: {self.device}")
 
     def _initialize_dataset(self) -> None:
-        moleculeNet_data_dir = Path(self.data_dir) / "molecule_net"
-        self.dataset = self._get_dataset(moleculeNet_data_dir=moleculeNet_data_dir)
+        molecule_net_data_dir = Path(self.data_dir) / "molecule_net"
+        self.dataset = self._get_dataset(molecule_net_data_dir=molecule_net_data_dir)
 
     def _initialize_dataloaders(self) -> None:
         self.train_dataloader, self.test_dataloader = self._get_dataloaders()
@@ -120,61 +110,59 @@ class Finetune:
 
         return train_dataloader, test_dataloader
 
-    def _get_dataset(self, moleculeNet_data_dir):
+    def _get_dataset(self, molecule_net_data_dir):
         """
         Filter values from MoleculeNet dataset where the data value is empty.
         Relevant for the BBBP dataset.
         """
+
+        def _filter_empty_data(data) -> bool:
+            return data.x.size()[0] != 0
+
         return MoleculeNet(
-            root=moleculeNet_data_dir,
+            root=molecule_net_data_dir,
             name=self.params["dataset"],
             pre_filter=_filter_empty_data,
         )
 
+    def _train_loop(self, epoch):
+        self.finetune_model.to(self.device)
+        self.finetune_model.train()
+        batch_loss = 0
 
-def _train_loop(model, dataloader, optimizer, loss_fn, epoch):
-    model.to(device)
-    model.train()
-    batch_loss = 0
-
-    for data in dataloader:
-        data = data.to(device)
-        out = model(data)
-        loss = loss_fn(out, data.y)
-        batch_loss += loss.item()
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-    average_loss = batch_loss / len(dataloader)
-    wandb.log({"training loss": average_loss}, step=epoch)
-
-
-def _test_loop(model, dataloader, loss_fn, epoch):
-    model.eval()
-    batch_loss = 0
-    y_true, y_pred = [], []
-
-    with torch.no_grad():
-        for data in dataloader:
+        for data in self.train_dataloader:
             data = data.to(device)
-            out = model(data)
-            loss = loss_fn(out, data.y)
+            out = self.finetune_model(data)
+            loss = self.loss_fn(out, data.y)
             batch_loss += loss.item()
-            y_true.append(data.y)
-            y_pred.append(out)
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
 
-    y_true = torch.cat(y_true).cpu().numpy()
-    y_pred = torch.cat(y_pred).cpu().numpy()
-    average_loss = batch_loss / len(dataloader)
-    roc_auc = roc_auc_score(y_true, y_pred)
+        average_loss = batch_loss / len(self.train_dataloader)
+        wandb.log({"training loss": average_loss}, step=epoch)
 
-    wandb.log({"test loss": average_loss}, step=epoch)
-    wandb.log({"ROC AUC": roc_auc}, step=epoch)
+    def _test_loop(self, epoch):
+        self.finetune_model.eval()
+        batch_loss = 0
+        y_true, y_pred = [], []
 
-    print(f"ROC AUC: {roc_auc}")
-    return average_loss, roc_auc
+        with torch.no_grad():
+            for data in self.test_dataloader:
+                data = data.to(device)
+                out = self.finetune_model(data)
+                loss = self.loss_fn(out, data.y)
+                batch_loss += loss.item()
+                y_true.append(data.y)
+                y_pred.append(out)
 
+        y_true = torch.cat(y_true).cpu().numpy()
+        y_pred = torch.cat(y_pred).cpu().numpy()
+        average_loss = batch_loss / len(self.test_dataloader)
+        roc_auc = roc_auc_score(y_true, y_pred)
 
-def _filter_empty_data(data) -> bool:
-    return data.x.size()[0] != 0
+        wandb.log({"test loss": average_loss}, step=epoch)
+        wandb.log({"ROC AUC": roc_auc}, step=epoch)
+
+        print(f"ROC AUC: {roc_auc}")
+        return average_loss, roc_auc
