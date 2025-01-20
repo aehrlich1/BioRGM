@@ -1,0 +1,19 @@
+name: biorgm
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+  - rusty1s
+dependencies:
+  - python
+  - pytorch-geometric
+  - pytorch
+  - pytorch-metric-learning
+  - torchinfo
+  - wandb
+  - scikit-learn
+  - scipy
+  - numpy
+  - pandas
+  - matplotlib
+  - rdkit
