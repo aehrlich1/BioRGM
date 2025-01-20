@@ -12,12 +12,73 @@ from torchinfo import summary
 
 from src.model import FinetuneModel, CategoricalEncodingModel
 from src.pretrain import Pretrain
+from src.utils import save_dict_to_yaml, make_combinations, PerformanceTracker
+
+
+class FinetuneDispatcher:
+    def __init__(self, params: dict, data_dir: str) -> None:
+        self.params = params
+        self.data_dir = data_dir
+
+    def start(self) -> None:
+        for pretrain_model_name in self.params["pretrain_models"]:
+            finetune_dir: Path = (
+                Path(self.data_dir) / "models" / pretrain_model_name / "finetune"
+            )
+            finetune_dir.mkdir(exist_ok=True)
+
+            config_finetune: dict = self.params.copy()
+            config_finetune.pop("pretrain_models")
+            config_finetune["pretrain_model"] = pretrain_model_name
+            save_dict_to_yaml(config_finetune, finetune_dir / "config_finetune.yml")
+
+            # create cross_configs (exclude datasets) as a list
+            config_combinations = make_combinations(
+                config_finetune, exclude_key="datasets"
+            )
+
+            for i, config_run in enumerate(config_combinations):
+                # create iterated subdir for each conf
+                conf_dir: Path = finetune_dir / f"conf_{i:02d}"
+                conf_dir.mkdir()
+
+                # save config file
+                save_dict_to_yaml(config_run, conf_dir / "config_run.yml")
+
+                for run in range(config_run["runs"]):
+                    # create run_dir
+                    run_dir: Path = conf_dir / f"run_{run:02d}"
+                    run_dir.mkdir()
+
+                    for dataset in self.params["datasets"]:
+                        config_single = config_run.copy()
+                        config_single.pop("datasets")
+                        config_single.pop("runs")
+                        config_single["dataset"] = dataset
+
+                        # save config
+                        save_dict_to_yaml(config_single, run_dir / "config_single.yml")
+
+                        # create Tracker and inject into Finetune
+                        performance_tracker = PerformanceTracker(tracking_dir=run_dir)
+
+                        finetune = Finetune(
+                            config_single, self.data_dir, performance_tracker
+                        )
+                        finetune.train()
 
 
 class Finetune:
-    def __init__(self, params: dict = None, data_dir=None):
+    def __init__(
+        self,
+        params: dict = None,
+        data_dir=None,
+        performance_tracker: PerformanceTracker = None,
+    ) -> None:
         self.params = params
         self.data_dir = data_dir
+        self.performance_tracker = performance_tracker
+        self.pretrain_model_dir = None
         self.dataset = None
         self.train_dataloader = None
         self.test_dataloader = None
@@ -46,11 +107,14 @@ class Finetune:
 
         for epoch in range(self.params["epochs"]):
             print(f"\nEpoch {epoch + 1}\n-------------------------------\n")
+            self.performance_tracker.log({"epoch": epoch})
             self._train_loop(epoch)
             self._test_loop(epoch)
 
+        self.performance_tracker.save()
+
     def _initialize_wandb(self) -> None:
-        wandb.init(project="BioRGM", config=self.params, mode="online")
+        wandb.init(project="BioRGM", config=self.params, mode="online", reinit=True)
 
     def _initialize_device(self) -> None:
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -125,10 +189,11 @@ class Finetune:
             pre_filter=_filter_empty_data,
         )
 
-    def _train_loop(self, epoch):
+    def _train_loop(self, epoch) -> None:
         self.finetune_model.to(self.device)
         self.finetune_model.train()
         batch_loss = 0
+        y_true, y_pred = [], []
 
         for data in self.train_dataloader:
             data = data.to(self.device)
@@ -139,10 +204,22 @@ class Finetune:
             loss.backward()
             self.optimizer.step()
 
-        average_loss = batch_loss / len(self.train_dataloader)
-        wandb.log({"training loss": average_loss}, step=epoch)
+            y_true.append(data.y)
+            y_pred.append(out.detach())
 
-    def _test_loop(self, epoch):
+
+        y_true = torch.cat(y_true).cpu().numpy()
+        y_pred = torch.cat(y_pred).cpu().numpy()
+
+        average_loss = batch_loss / len(self.train_dataloader)
+        roc_auc = roc_auc_score(y_true, y_pred)
+        wandb.log({"train loss": average_loss}, step=epoch)
+        wandb.log({"train ROC AUC": roc_auc}, step=epoch)
+
+        self.performance_tracker.log({"train_loss": average_loss})
+        self.performance_tracker.log({"train_roc_auc": roc_auc})
+
+    def _test_loop(self, epoch) -> None:
         self.finetune_model.eval()
         batch_loss = 0
         y_true, y_pred = [], []
@@ -158,11 +235,14 @@ class Finetune:
 
         y_true = torch.cat(y_true).cpu().numpy()
         y_pred = torch.cat(y_pred).cpu().numpy()
+
         average_loss = batch_loss / len(self.test_dataloader)
         roc_auc = roc_auc_score(y_true, y_pred)
 
         wandb.log({"test loss": average_loss}, step=epoch)
-        wandb.log({"ROC AUC": roc_auc}, step=epoch)
+        wandb.log({"test ROC AUC": roc_auc}, step=epoch)
+
+        self.performance_tracker.log({"test_loss": average_loss})
+        self.performance_tracker.log({"test_roc_auc": roc_auc})
 
         print(f"ROC AUC: {roc_auc}")
-        return average_loss, roc_auc

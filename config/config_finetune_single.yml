@@ -1,9 +1,11 @@
 batch_size: 32
 dim_h: 128 # should be inferred from pretrain model
-dataset: "BACE"
+datasets: ["BACE", "BBBP"] # ["BACE", "BBBP"]
 dropout: 0.1
 epochs: 10
-freeze_pretrain: False, # True | False
+freeze_pretrain: [True] # True | False
 lr: 0.0005
-pretrain_model: null
+pretrain_models:
+  - "curious-armadillo-45" # null | <model_name>
+runs: 2 # How often to repeat the run
 task: "finetune"

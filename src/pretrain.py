@@ -55,8 +55,8 @@ class Pretrain:
         wandb.finish()
 
     def load_pretrained_model(self, model_name) -> None:
-        # TODO: epoch should be a parameter
-        weights_file_path = Path(self.data_dir) / "models" / model_name / "epoch_5.pth"
+        # TODO: epoch_x.pth should be a parameter
+        weights_file_path = Path(self.data_dir) / "models" / model_name / "epoch_4.pth"
         config_file_path = (
             Path(self.data_dir) / "models" / model_name / "config_pretrain.yml"
         )
