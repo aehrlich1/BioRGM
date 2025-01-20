@@ -51,16 +51,19 @@ class FinetuneDispatcher:
                     run_dir.mkdir()
 
                     for dataset in self.params["datasets"]:
+                        dataset_dir = run_dir / dataset
+                        dataset_dir.mkdir()
+
                         config_single = config_run.copy()
                         config_single.pop("datasets")
                         config_single.pop("runs")
                         config_single["dataset"] = dataset
 
                         # save config
-                        save_dict_to_yaml(config_single, run_dir / "config_single.yml")
+                        save_dict_to_yaml(config_single, dataset_dir / "config_single.yml")
 
                         # create Tracker and inject into Finetune
-                        performance_tracker = PerformanceTracker(tracking_dir=run_dir)
+                        performance_tracker = PerformanceTracker(tracking_dir=dataset_dir)
 
                         finetune = Finetune(
                             config_single, self.data_dir, performance_tracker
@@ -118,7 +121,7 @@ class Finetune:
 
     def _initialize_device(self) -> None:
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        print(f"Using device: {self.device}")
+        print(f"From Finetune, using device: {self.device}")
 
     def _initialize_dataset(self) -> None:
         molecule_net_data_dir = Path(self.data_dir) / "molecule_net"
@@ -175,18 +178,9 @@ class Finetune:
         return train_dataloader, test_dataloader
 
     def _get_dataset(self, molecule_net_data_dir):
-        """
-        Filter values from MoleculeNet dataset where the data value is empty.
-        Relevant for the BBBP dataset.
-        """
-
-        def _filter_empty_data(data) -> bool:
-            return data.x.size()[0] != 0
-
         return MoleculeNet(
             root=molecule_net_data_dir,
             name=self.params["dataset"],
-            pre_filter=_filter_empty_data,
         )
 
     def _train_loop(self, epoch) -> None:
