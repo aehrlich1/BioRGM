@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 
 import torch
@@ -60,10 +61,14 @@ class FinetuneDispatcher:
                         config_single["dataset"] = dataset
 
                         # save config
-                        save_dict_to_yaml(config_single, dataset_dir / "config_single.yml")
+                        save_dict_to_yaml(
+                            config_single, dataset_dir / "config_single.yml"
+                        )
 
                         # create Tracker and inject into Finetune
-                        performance_tracker = PerformanceTracker(tracking_dir=dataset_dir)
+                        performance_tracker = PerformanceTracker(
+                            tracking_dir=dataset_dir
+                        )
 
                         finetune = Finetune(
                             config_single, self.data_dir, performance_tracker
@@ -178,10 +183,18 @@ class Finetune:
         return train_dataloader, test_dataloader
 
     def _get_dataset(self, molecule_net_data_dir):
-        return MoleculeNet(
-            root=molecule_net_data_dir,
-            name=self.params["dataset"],
-        )
+        """
+        Ignore the warning that incorrect smiles (mol object cannot be formed by RDKit),
+        were omitted for the dataset.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            molecule_net_dataset = MoleculeNet(
+                root=molecule_net_data_dir,
+                name=self.params["dataset"],
+            )
+
+        return molecule_net_dataset
 
     def _train_loop(self, epoch) -> None:
         self.finetune_model.to(self.device)
@@ -200,7 +213,6 @@ class Finetune:
 
             y_true.append(data.y)
             y_pred.append(out.detach())
-
 
         y_true = torch.cat(y_true).cpu().numpy()
         y_pred = torch.cat(y_pred).cpu().numpy()
