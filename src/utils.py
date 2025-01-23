@@ -109,10 +109,17 @@ class PerformanceTracker:
         self.epoch = []
         self.train_loss = []
         self.train_roc_auc = []
+        self.valid_loss = []
+        self.valid_roc_auc = []
         self.test_loss = []
         self.test_roc_auc = []
 
-    def save(self) -> None:
+        self.counter = 0
+        self.patience = 15
+        self.best_valid_loss = float("inf")
+        self.early_stop = False
+
+    def save_performance(self) -> None:
         self.save_to_csv()
         self.save_loss_plot()
         self.save_roc_auc_plot()
@@ -120,11 +127,11 @@ class PerformanceTracker:
     def save_loss_plot(self) -> None:
         loss_plot_path = self.tracking_dir / "loss_plot.pdf"
         fig, ax = plt.subplots(figsize=(10, 6), layout="constrained", dpi=300)
-        ax.plot(self.epoch, self.train_loss, self.test_loss)
+        ax.plot(self.epoch, self.train_loss, self.valid_loss)
         ax.grid(True)
         ax.set_xlabel("Epoch")
         ax.set_ylabel("Loss")
-        ax.legend(["Train", "Test"])
+        ax.legend(["Train", "Valid"])
 
         fig.savefig(loss_plot_path)
         print(f"Saved loss plot to: {loss_plot_path}")
@@ -132,14 +139,14 @@ class PerformanceTracker:
     def save_roc_auc_plot(self) -> None:
         roc_auc_plot_path = self.tracking_dir / "roc_auc_plot.pdf"
         fig, ax = plt.subplots(figsize=(10, 6), layout="constrained", dpi=300)
-        ax.plot(self.epoch, self.train_roc_auc, self.test_roc_auc)
+        ax.plot(self.epoch, self.train_roc_auc, self.valid_roc_auc)
         ax.grid(True)
         ax.set_xlabel("Epoch")
         ax.set_ylabel("ROC AUC")
-        ax.legend(["Train", "Test"])
+        ax.legend(["Train", "Valid"])
 
         fig.savefig(roc_auc_plot_path)
-        print(f"Saved loss plot to: {roc_auc_plot_path}")
+        print(f"Saved ROC AUC plot to: {roc_auc_plot_path}")
 
     def save_to_csv(self) -> None:
         df = pd.DataFrame(
@@ -147,11 +154,24 @@ class PerformanceTracker:
                 "epoch": self.epoch,
                 "train_loss": self.train_loss,
                 "train_roc_auc": self.train_roc_auc,
+                "valid_loss": self.valid_loss,
+                "valid_roc_auc": self.valid_roc_auc,
                 "test_loss": self.test_loss,
                 "test_roc_auc": self.test_roc_auc,
             }
         )
         df.to_csv(self.tracking_dir / "performance.csv", index=False)
+
+    def update_early_loss_state(self) -> None:
+        if self.valid_loss[-1] < self.best_valid_loss:
+            self.best_valid_loss = self.valid_loss[-1]
+            self.counter = 0
+        else:
+            self.counter += 1
+
+        if self.counter >= self.patience:
+            self.early_stop = True
+            print("Early stopping triggered.")
 
     def log(self, data: dict[str, int | float]) -> None:
         for key, value in data.items():

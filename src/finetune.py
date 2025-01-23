@@ -3,6 +3,7 @@ from pathlib import Path
 
 import torch
 import wandb
+from concurrent.futures import ProcessPoolExecutor
 from sklearn.metrics import roc_auc_score
 from torch.nn import BCELoss
 from torch.optim import Adam
@@ -22,58 +23,59 @@ class FinetuneDispatcher:
         self.data_dir = data_dir
 
     def start(self) -> None:
-        for pretrain_model_name in self.params["pretrain_models"]:
-            finetune_dir: Path = (
-                Path(self.data_dir) / "models" / pretrain_model_name / "finetune"
-            )
-            finetune_dir.mkdir(exist_ok=True)
+        with ProcessPoolExecutor(max_workers=8) as executor:
+            for pretrain_model_name in self.params["pretrain_models"]:
+                finetune_dir: Path = (
+                    Path(self.data_dir) / "models" / pretrain_model_name / "finetune"
+                )
+                finetune_dir.mkdir(exist_ok=True)
 
-            config_finetune: dict = self.params.copy()
-            config_finetune.pop("pretrain_models")
-            config_finetune["pretrain_model"] = pretrain_model_name
-            save_dict_to_yaml(config_finetune, finetune_dir / "config_finetune.yml")
+                config_finetune: dict = self.params.copy()
+                config_finetune.pop("pretrain_models")
+                config_finetune["pretrain_model"] = pretrain_model_name
+                save_dict_to_yaml(config_finetune, finetune_dir / "config_finetune.yml")
 
-            # create cross_configs (exclude datasets) as a list
-            config_combinations = make_combinations(
-                config_finetune, exclude_key="datasets"
-            )
+                # create cross_configs (exclude datasets) as a list
+                config_combinations = make_combinations(
+                    config_finetune, exclude_key="datasets"
+                )
 
-            for i, config_run in enumerate(config_combinations):
-                # create iterated subdir for each conf
-                conf_dir: Path = finetune_dir / f"conf_{i:02d}"
-                conf_dir.mkdir()
+                for conf_iteration_num, config_run in enumerate(config_combinations):
+                    # create iterated subdir for each conf
+                    conf_dir: Path = finetune_dir / f"conf_{conf_iteration_num:02d}"
+                    conf_dir.mkdir()
 
-                # save config file
-                save_dict_to_yaml(config_run, conf_dir / "config_run.yml")
+                    # save config file
+                    save_dict_to_yaml(config_run, conf_dir / "config_run.yml")
 
-                for run in range(config_run["runs"]):
-                    # create run_dir
-                    run_dir: Path = conf_dir / f"run_{run:02d}"
-                    run_dir.mkdir()
+                    for run in range(config_run["runs"]):
+                        # create run_dir
+                        run_dir: Path = conf_dir / f"run_{run:02d}"
+                        run_dir.mkdir()
 
-                    for dataset in self.params["datasets"]:
-                        dataset_dir = run_dir / dataset
-                        dataset_dir.mkdir()
+                        for dataset in self.params["datasets"]:
+                            dataset_dir = run_dir / dataset
+                            dataset_dir.mkdir()
 
-                        config_single = config_run.copy()
-                        config_single.pop("datasets")
-                        config_single.pop("runs")
-                        config_single["dataset"] = dataset
+                            config_single = config_run.copy()
+                            config_single.pop("datasets")
+                            config_single.pop("runs")
+                            config_single["dataset"] = dataset
 
-                        # save config
-                        save_dict_to_yaml(
-                            config_single, dataset_dir / "config_single.yml"
-                        )
+                            # save config
+                            save_dict_to_yaml(
+                                config_single, dataset_dir / "config_single.yml"
+                            )
 
-                        # create Tracker and inject into Finetune
-                        performance_tracker = PerformanceTracker(
-                            tracking_dir=dataset_dir
-                        )
+                            # create Tracker and inject into Finetune
+                            performance_tracker = PerformanceTracker(
+                                tracking_dir=dataset_dir
+                            )
 
-                        finetune = Finetune(
-                            config_single, self.data_dir, performance_tracker
-                        )
-                        finetune.train()
+                            finetune = Finetune(
+                                config_single, self.data_dir, performance_tracker
+                            )
+                            executor.submit(finetune.train)
 
 
 class Finetune:
@@ -89,6 +91,7 @@ class Finetune:
         self.pretrain_model_dir = None
         self.dataset = None
         self.train_dataloader = None
+        self.valid_dataloader = None
         self.test_dataloader = None
         self.device = None
         self.finetune_model = None
@@ -100,7 +103,7 @@ class Finetune:
         self._initialize()
 
     def _initialize(self) -> None:
-        self._initialize_wandb()
+        # self._initialize_wandb()
         self._initialize_device()
         self._initialize_dataset()
         self._initialize_dataloaders()
@@ -117,9 +120,14 @@ class Finetune:
             print(f"\nEpoch {epoch + 1}\n-------------------------------\n")
             self.performance_tracker.log({"epoch": epoch})
             self._train_loop(epoch)
-            self._test_loop(epoch)
+            self._valid_loop(epoch)
+            self._test_loop()
+            self.performance_tracker.update_early_loss_state()
 
-        self.performance_tracker.save()
+            if self.performance_tracker.early_stop: break
+
+        self.performance_tracker.save_performance()
+        # wandb.finish()
 
     def _initialize_wandb(self) -> None:
         wandb.init(project="BioRGM", config=self.params, mode="online", reinit=True)
@@ -133,7 +141,9 @@ class Finetune:
         self.dataset = self._get_dataset(molecule_net_data_dir=molecule_net_data_dir)
 
     def _initialize_dataloaders(self) -> None:
-        self.train_dataloader, self.test_dataloader = self._get_dataloaders()
+        self.train_dataloader, self.valid_dataloader, self.test_dataloader = (
+            self._get_dataloaders()
+        )
 
     def _initialize_num_output_tasks(self) -> None:
         self.num_output_tasks = torch.numel(self.dataset[0].y)
@@ -161,6 +171,7 @@ class Finetune:
 
         summary(model)
         self.finetune_model = model
+        self.finetune_model.to(self.device)
 
     def _initialize_optimizer(self) -> None:
         self.optimizer = Adam(self.finetune_model.parameters(), lr=self.params["lr"])
@@ -169,18 +180,21 @@ class Finetune:
         self.loss_fn = BCELoss()
 
     def _get_dataloaders(self):
-        train_dataset, test_dataset = random_split(
-            dataset=self.dataset, lengths=[0.8, 0.2]
+        train_dataset, valid_dataset, test_dataset = random_split(
+            dataset=self.dataset, lengths=[0.8, 0.1, 0.1]
         )
 
         train_dataloader = DataLoader(
             train_dataset, batch_size=self.params["batch_size"], shuffle=True
         )
+        valid_dataloader = DataLoader(
+            valid_dataset, batch_size=self.params["batch_size"], shuffle=False
+        )
         test_dataloader = DataLoader(
             test_dataset, batch_size=self.params["batch_size"], shuffle=False
         )
 
-        return train_dataloader, test_dataloader
+        return train_dataloader, valid_dataloader, test_dataloader
 
     def _get_dataset(self, molecule_net_data_dir):
         """
@@ -197,7 +211,6 @@ class Finetune:
         return molecule_net_dataset
 
     def _train_loop(self, epoch) -> None:
-        self.finetune_model.to(self.device)
         self.finetune_model.train()
         batch_loss = 0
         y_true, y_pred = [], []
@@ -219,13 +232,41 @@ class Finetune:
 
         average_loss = batch_loss / len(self.train_dataloader)
         roc_auc = roc_auc_score(y_true, y_pred)
-        wandb.log({"train loss": average_loss}, step=epoch)
-        wandb.log({"train ROC AUC": roc_auc}, step=epoch)
+        # wandb.log({"train loss": average_loss}, step=epoch)
+        # wandb.log({"train ROC AUC": roc_auc}, step=epoch)
 
         self.performance_tracker.log({"train_loss": average_loss})
         self.performance_tracker.log({"train_roc_auc": roc_auc})
 
-    def _test_loop(self, epoch) -> None:
+    def _valid_loop(self, epoch) -> None:
+        self.finetune_model.eval()
+        batch_loss = 0
+        y_true, y_pred = [], []
+
+        with torch.no_grad():
+            for data in self.valid_dataloader:
+                data = data.to(self.device)
+                out = self.finetune_model(data)
+                loss = self.loss_fn(out, data.y)
+                batch_loss += loss.item()
+                y_true.append(data.y)
+                y_pred.append(out)
+
+        y_true = torch.cat(y_true).cpu().numpy()
+        y_pred = torch.cat(y_pred).cpu().numpy()
+
+        average_loss = batch_loss / len(self.valid_dataloader)
+        roc_auc = roc_auc_score(y_true, y_pred)
+
+        # wandb.log({"valid loss": average_loss}, step=epoch)
+        # wandb.log({"valid ROC AUC": roc_auc}, step=epoch)
+
+        self.performance_tracker.log({"valid_loss": average_loss})
+        self.performance_tracker.log({"valid_roc_auc": roc_auc})
+
+        print(f"ROC AUC Valid: {roc_auc}")
+
+    def _test_loop(self) -> None:
         self.finetune_model.eval()
         batch_loss = 0
         y_true, y_pred = [], []
@@ -245,10 +286,10 @@ class Finetune:
         average_loss = batch_loss / len(self.test_dataloader)
         roc_auc = roc_auc_score(y_true, y_pred)
 
-        wandb.log({"test loss": average_loss}, step=epoch)
-        wandb.log({"test ROC AUC": roc_auc}, step=epoch)
+        # wandb.log({"test loss": average_loss}, step=epoch)
+        # wandb.log({"test ROC AUC": roc_auc}, step=epoch)
 
         self.performance_tracker.log({"test_loss": average_loss})
         self.performance_tracker.log({"test_roc_auc": roc_auc})
 
-        print(f"ROC AUC: {roc_auc}")
+        print(f"ROC AUC Test: {roc_auc}")

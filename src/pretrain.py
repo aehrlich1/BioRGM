@@ -50,7 +50,7 @@ class Pretrain:
         for epoch in range(self.params["epochs"]):
             print(f"\nEpoch {epoch}\n" + "-" * 30)
             self._train_loop()
-            self.checkpoint.save(self.model, epoch)
+            self.checkpoint.save_performance(self.model, epoch)
 
         wandb.finish()
 
@@ -64,7 +64,7 @@ class Pretrain:
 
         encoder_model = self._get_encoder_model(params["encoder"])
         self.model = PretrainModel(encoder_model, params["dim_h"], params["dropout"])
-        self.model.load_state_dict(torch.load(weights_file_path))
+        self.model.load_state_dict(torch.load(weights_file_path, weights_only=True))
 
     def load_random_model(self, encoder_model, dim_h, dropout) -> None:
         self.model = PretrainModel(encoder_model, dim_h, dropout).to(self.device)
@@ -92,7 +92,7 @@ class Pretrain:
 
     def _initialize_device(self) -> None:
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        print(f"Using device: {self.device}")
+        print(f"From Pretrain, using device: {self.device}")
 
     def _initialize_encoder_model(self) -> None:
         self.encoder_model = self._get_encoder_model(self.params["encoder"]).to(
