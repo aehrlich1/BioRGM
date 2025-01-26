@@ -4,6 +4,8 @@ from pathlib import Path
 import torch
 import wandb
 from concurrent.futures import ProcessPoolExecutor
+
+import pandas as pd
 from sklearn.metrics import roc_auc_score
 from torch.nn import BCELoss
 from torch.optim import Adam
@@ -25,57 +27,139 @@ class FinetuneDispatcher:
     def start(self) -> None:
         with ProcessPoolExecutor(max_workers=8) as executor:
             for pretrain_model_name in self.params["pretrain_models"]:
-                finetune_dir: Path = (
-                    Path(self.data_dir) / "models" / pretrain_model_name / "finetune"
-                )
-                finetune_dir.mkdir(exist_ok=True)
-
-                config_finetune: dict = self.params.copy()
-                config_finetune.pop("pretrain_models")
-                config_finetune["pretrain_model"] = pretrain_model_name
-                save_dict_to_yaml(config_finetune, finetune_dir / "config_finetune.yml")
-
-                # create cross_configs (exclude datasets) as a list
-                config_combinations = make_combinations(
-                    config_finetune, exclude_key="datasets"
+                finetune_dir = self._create_finetune_dir(pretrain_model_name)
+                config_combinations = self._create_config_combinations(
+                    finetune_dir, pretrain_model_name
                 )
 
                 for conf_iteration_num, config_run in enumerate(config_combinations):
-                    # create iterated subdir for each conf
                     conf_dir: Path = finetune_dir / f"conf_{conf_iteration_num:02d}"
                     conf_dir.mkdir()
-
-                    # save config file
                     save_dict_to_yaml(config_run, conf_dir / "config_run.yml")
 
                     for run in range(config_run["runs"]):
-                        # create run_dir
                         run_dir: Path = conf_dir / f"run_{run:02d}"
                         run_dir.mkdir()
 
                         for dataset in self.params["datasets"]:
                             dataset_dir = run_dir / dataset
                             dataset_dir.mkdir()
+                            config_single = self._create_config_single(
+                                config_run, dataset
+                            )
 
-                            config_single = config_run.copy()
-                            config_single.pop("datasets")
-                            config_single.pop("runs")
-                            config_single["dataset"] = dataset
-
-                            # save config
                             save_dict_to_yaml(
                                 config_single, dataset_dir / "config_single.yml"
                             )
-
-                            # create Tracker and inject into Finetune
                             performance_tracker = PerformanceTracker(
                                 tracking_dir=dataset_dir
                             )
-
                             finetune = Finetune(
                                 config_single, self.data_dir, performance_tracker
                             )
                             executor.submit(finetune.train)
+
+                            # After each dataset, create a performance.csv report: DONE
+                        # After each run, create a run_xx_results.csv. Placed into /run_xx/run_xx_results.csv
+                    # After each conf, create a summary of all the runs.
+
+        print("Finetuning has finished. Data Evaluation to be started. ")
+        self.data_evaluation()
+
+    def data_evaluation(self) -> None:
+        """
+        Iterate through
+        """
+        column_names = [
+            "dataset",
+            "conf",
+            "train_loss",
+            "train_roc_auc",
+            "valid_loss",
+            "valid_roc_auc",
+            "test_loss",
+            "test_roc_auc",
+        ]
+
+        models_dir: Path = Path("./data/models")
+        for pretrain_model_name in self.params["pretrain_models"]:
+            model_dir: Path = models_dir / pretrain_model_name
+            finetune_dir: Path = model_dir / "finetune"
+            finetune_df = pd.DataFrame()
+
+            # get all conf directories
+            conf_dirs: list[Path] = [
+                d
+                for d in finetune_dir.iterdir()
+                if d.name.startswith("conf_") and d.is_dir()
+            ]
+            for conf_dir in conf_dirs:
+                conf_list = []
+                run_dirs: list[Path] = [
+                    d
+                    for d in conf_dir.iterdir()
+                    if d.name.startswith("run_") and d.is_dir()
+                ]
+                for run_dir in run_dirs:
+                    run_list = []
+                    dataset_dirs: list[Path] = [d for d in run_dir.iterdir() if d.is_dir()]
+                    for dataset_dir in dataset_dirs:
+                        perf_list: list = self.read_last_row_csv(
+                            dataset_dir / "performance.csv"
+                        )
+                        run_list.append([dataset_dir.name, conf_dir.name] + perf_list)
+                    # save run_xx_results.csv
+                    # conf_list.extend(run_list)
+                    run_df = pd.DataFrame(run_list, columns=column_names)
+                    run_df.to_csv(run_dir / "run_results.csv", index=False)
+                    conf_list.extend(run_list)
+                # conf_xx_results.csv
+                conf_df = pd.DataFrame(conf_list, columns=column_names)
+                conf_df = conf_df.groupby(['dataset', 'conf']).agg(['mean', 'std'])
+                conf_df = conf_df.reset_index()
+                # Save to CSV with flattened columns
+                conf_df.columns = pd.MultiIndex.from_tuples(conf_df.columns)
+                conf_df.columns = ['_'.join(col).strip() for col in conf_df.columns]
+                # conf_df.to_csv(conf_dir / "conf_results.csv", index=True, header=['_'.join(col).strip() for col in conf_df.columns])
+                conf_df.to_csv(conf_dir / "conf_results.csv", index=True)
+                finetune_df = pd.concat([finetune_df, conf_df])
+            # finetune_results.csv
+            finetune_df.sort_values(by=["dataset_", "conf_"], inplace=True)
+            finetune_df.to_csv(finetune_dir / "finetune_results.csv", index=False)
+
+    @staticmethod
+    def read_last_row_csv(file_path: Path) -> list:
+        """
+        Read last row csv file and remove first column (epoch)
+        """
+        df = pd.read_csv(file_path)
+        return list(df.iloc[-1][1:])
+
+    @staticmethod
+    def _create_config_single(config_run, dataset):
+        config_single = config_run.copy()
+        config_single.pop("datasets")
+        config_single.pop("runs")
+        config_single["dataset"] = dataset
+        return config_single
+
+    def _create_finetune_dir(self, pretrain_model_name):
+        finetune_dir: Path = (
+            Path(self.data_dir) / "models" / pretrain_model_name / "finetune"
+        )
+        finetune_dir.mkdir(exist_ok=True)
+        return finetune_dir
+
+    def _create_config_combinations(
+        self, finetune_dir, pretrain_model_name
+    ) -> list[dict]:
+        config_finetune: dict = self.params.copy()
+        config_finetune.pop("pretrain_models")
+        config_finetune["pretrain_model"] = pretrain_model_name
+        save_dict_to_yaml(config_finetune, finetune_dir / "config_finetune.yml")
+        # create cross_configs (exclude datasets) as a list
+        config_combinations = make_combinations(config_finetune, exclude_key="datasets")
+        return config_combinations
 
 
 class Finetune:
@@ -124,7 +208,8 @@ class Finetune:
             self._test_loop()
             self.performance_tracker.update_early_loss_state()
 
-            if self.performance_tracker.early_stop: break
+            if self.performance_tracker.early_stop:
+                break
 
         self.performance_tracker.save_performance()
         # wandb.finish()
