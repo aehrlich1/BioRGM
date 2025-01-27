@@ -2,8 +2,11 @@ import os
 import sys
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor
+
 import wandb
 import torch
+import uuid
 from pathlib import Path
 from pytorch_metric_learning import losses, miners, samplers
 from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, BaseDistance
@@ -11,8 +14,21 @@ from torch_geometric.loader import DataLoader
 
 from src.data import PubchemDataset
 from src.model import PretrainModel, CategoricalEncodingModel, OneHotEncoderModel
-from src.utils import Checkpoint, read_config_file
+from src.utils import Checkpoint, read_config_file, make_combinations
 
+class PretrainDispatcher:
+    def __init__(self, params: dict, data_dir: str) -> None:
+        self.params = params
+        self.data_dir = data_dir
+
+    def start(self) -> None:
+        with ProcessPoolExecutor(max_workers=8) as executor:
+            pretrain_configs: list[dict] = make_combinations(self.params)
+            print(f"Number of pretraining configs: {len(pretrain_configs)}")
+            for pretrain_config in pretrain_configs:
+                pretrain_model = Pretrain(pretrain_config, self.data_dir)
+                pretrain_model.initialize_for_training()
+                executor.submit(pretrain_model.train)
 
 class Pretrain:
     def __init__(self, params: dict = None, data_dir=None):
@@ -33,7 +49,7 @@ class Pretrain:
         self._initialize_device()
 
     def initialize_for_training(self) -> None:
-        self._initialize_wandb()
+        # self._initialize_wandb()
         self._initialize_dataset()
         self._initialize_sampler()
         self._initialize_dataloader()
@@ -50,9 +66,9 @@ class Pretrain:
         for epoch in range(self.params["epochs"]):
             print(f"\nEpoch {epoch}\n" + "-" * 30)
             self._train_loop()
-            self.checkpoint.save_performance(self.model, epoch)
+            self.checkpoint.save(self.model, epoch)
 
-        wandb.finish()
+        # wandb.finish()
 
     def load_pretrained_model(self, model_name) -> None:
         # TODO: epoch_x.pth should be a parameter
@@ -60,10 +76,10 @@ class Pretrain:
         config_file_path = (
             Path(self.data_dir) / "models" / model_name / "config_pretrain.yml"
         )
-        params: dict = read_config_file(config_file_path)
+        self.params: dict = read_config_file(config_file_path)
 
-        encoder_model = self._get_encoder_model(params["encoder"])
-        self.model = PretrainModel(encoder_model, params["dim_h"], params["dropout"])
+        encoder_model = self._get_encoder_model(self.params["encoder"])
+        self.model = PretrainModel(encoder_model, self.params["dim_h"], self.params["dropout"])
         self.model.load_state_dict(torch.load(weights_file_path, weights_only=True))
 
     def load_random_model(self, encoder_model, dim_h, dropout) -> None:
@@ -74,7 +90,7 @@ class Pretrain:
         pass
 
     def _initialize_wandb(self) -> None:
-        wandb.init(project="BioRGM", config=self.params, mode="online")
+        wandb.init(project="BioRGM", config=self.params, mode="online", reinit=True)
 
     def _initialize_dataset(self) -> None:
         self.dataset = PubchemDataset(
@@ -136,7 +152,11 @@ class Pretrain:
 
     def _initialize_checkpoint(self) -> None:
         output_dir_name = wandb.run.name
+        output_dir_name = str(uuid.uuid4())
         self.checkpoint = Checkpoint(self.data_dir, self.params, output_dir_name)
+
+    def get_dim_h(self) -> int:
+        return self.params["dim_h"]
 
     def _get_encoder_model(self, encoder_name):
         if encoder_name == "embedding":
@@ -172,7 +192,7 @@ class Pretrain:
                 print(
                     f"Iteration {i}: Loss = {loss:.3g}, Mined triplets = {self.mining_fn.num_triplets}"
                 )
-                wandb.log({"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets})
+                # wandb.log({"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets})
 
 
 if __name__ == "__main__":

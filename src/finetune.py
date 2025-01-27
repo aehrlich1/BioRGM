@@ -26,7 +26,8 @@ class FinetuneDispatcher:
 
     def start(self) -> None:
         with ProcessPoolExecutor(max_workers=8) as executor:
-            for pretrain_model_name in self.params["pretrain_models"]:
+            pretrain_model_names: list[str] = self._get_pretrain_model_names()
+            for pretrain_model_name in pretrain_model_names:
                 finetune_dir = self._create_finetune_dir(pretrain_model_name)
                 config_combinations = self._create_config_combinations(
                     finetune_dir, pretrain_model_name
@@ -62,6 +63,18 @@ class FinetuneDispatcher:
         print("Finetuning has finished. Data Evaluation to be started. ")
         self.data_evaluation()
 
+    def _get_pretrain_model_names(self) -> list:
+        if self.params["pretrain_models"] is None:
+            models_dir: Path = Path(self.data_dir) / "models"
+            pretrain_model_names = [
+                pretrain_model.stem
+                for pretrain_model in models_dir.iterdir()
+                if pretrain_model.is_dir()
+            ]
+            return pretrain_model_names
+
+        return self.params["pretrain_models"]
+
     def data_evaluation(self) -> None:
         """
         Iterate through
@@ -79,7 +92,7 @@ class FinetuneDispatcher:
 
         models_dir: Path = Path("./data/models")
         model_dfs_list = []
-        for pretrain_model_name in self.params["pretrain_models"]:
+        for pretrain_model_name in self._get_pretrain_model_names():
             model_dir: Path = models_dir / pretrain_model_name
             finetune_dir: Path = model_dir / "finetune"
             finetune_df = pd.DataFrame()
@@ -99,7 +112,9 @@ class FinetuneDispatcher:
                 ]
                 for run_dir in run_dirs:
                     run_list = []
-                    dataset_dirs: list[Path] = [d for d in run_dir.iterdir() if d.is_dir()]
+                    dataset_dirs: list[Path] = [
+                        d for d in run_dir.iterdir() if d.is_dir()
+                    ]
                     for dataset_dir in dataset_dirs:
                         perf_list: list = self.read_last_row_csv(
                             dataset_dir / "performance.csv"
@@ -112,17 +127,22 @@ class FinetuneDispatcher:
                     conf_list.extend(run_list)
                 # conf_xx_results.csv
                 conf_df = pd.DataFrame(conf_list, columns=column_names)
-                conf_df = conf_df.groupby(['dataset', 'conf']).agg(['mean', 'std'])
+                conf_df = conf_df.groupby(["dataset", "conf"]).agg(["mean", "std"])
                 conf_df = conf_df.reset_index()
                 # Save to CSV with flattened columns
                 conf_df.columns = pd.MultiIndex.from_tuples(conf_df.columns)
-                conf_df.columns = ['_'.join(col).strip() if i > 1 else col[0] for i, col in enumerate(conf_df.columns)]
+                conf_df.columns = [
+                    "_".join(col).strip() if i > 1 else col[0]
+                    for i, col in enumerate(conf_df.columns)
+                ]
                 conf_df.to_csv(conf_dir / "conf_results.csv", index=False)
                 finetune_df = pd.concat([finetune_df, conf_df])
             # finetune_results.csv
             finetune_df.sort_values(by=["dataset", "conf"], inplace=True)
             finetune_df.to_csv(finetune_dir / "finetune_results.csv", index=False)
-            finetune_df = finetune_df[['dataset', 'conf', 'test_roc_auc_mean', 'test_roc_auc_std']]
+            finetune_df = finetune_df[
+                ["dataset", "conf", "test_roc_auc_mean", "test_roc_auc_std"]
+            ]
             finetune_df["model"] = pretrain_model_name
             model_dfs_list.append(finetune_df)
 
@@ -141,17 +161,19 @@ class FinetuneDispatcher:
         model_df.columns.name = None
 
         # Sort all columns alphabetically except 'model' and 'conf'
-        other_cols = sorted([col for col in model_df.columns if col not in ['model', 'conf']])
-        model_df = model_df[['model', 'conf'] + other_cols]
+        other_cols = sorted(
+            [col for col in model_df.columns if col not in ["model", "conf"]]
+        )
+        model_df = model_df[["model", "conf"] + other_cols]
 
         # Add the 'sum_roc_auc' column by summing rows where the column name ends with 'mean'
-        mean_columns = [col for col in model_df.columns if col.endswith('mean')]
-        model_df['sum_roc_auc'] = model_df[mean_columns].sum(axis=1)
+        mean_columns = [col for col in model_df.columns if col.endswith("mean")]
+        model_df["sum_roc_auc"] = model_df[mean_columns].sum(axis=1)
 
         model_df.to_csv(models_dir / "model_results_overview.csv", index=False)
 
         # Extract the row with the highest 'sum_roc_auc' for each model
-        best_models_df = model_df.loc[model_df.groupby('model')['sum_roc_auc'].idxmax()]
+        best_models_df = model_df.loc[model_df.groupby("model")["sum_roc_auc"].idxmax()]
         best_models_df.to_csv(models_dir / "model_results.csv", index=False)
 
     @staticmethod
@@ -272,12 +294,15 @@ class Finetune:
         else:
             pretrain.load_pretrained_model(self.params["pretrain_model"])
 
+        self.params["dim_h"] = pretrain.get_dim_h()
         self.pretrain_model = pretrain.model
 
     def _initialize_finetune_model(self) -> None:
-        model = FinetuneModel(self.pretrain_model, out_dim=self.num_output_tasks).to(
-            self.device
-        )
+        model = FinetuneModel(
+            self.pretrain_model,
+            in_dim=self.params["dim_h"],
+            out_dim=self.num_output_tasks,
+        ).to(self.device)
         if self.params["freeze_pretrain"]:
             model.pretrain_model.freeze()
 

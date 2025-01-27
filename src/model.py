@@ -214,10 +214,10 @@ class EcfpModel(nn.Module):
 
 
 class ProjectionHead(nn.Module):
-    def __init__(self, out_dim):
+    def __init__(self, in_dim, out_dim):
         super().__init__()
         self.projection = nn.Sequential(
-            nn.Linear(128, 64),
+            nn.Linear(in_dim, 64),
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
@@ -230,10 +230,10 @@ class ProjectionHead(nn.Module):
 
 
 class FinetuneModel(nn.Module):
-    def __init__(self, pretrain_model, out_dim):
+    def __init__(self, pretrain_model, in_dim, out_dim):
         super().__init__()
         self.pretrain_model = pretrain_model
-        self.projection_head = ProjectionHead(out_dim).to(device)
+        self.projection_head = ProjectionHead(in_dim, out_dim).to(device)
 
     def forward(self, data):
         h_G = self.pretrain_model(data)

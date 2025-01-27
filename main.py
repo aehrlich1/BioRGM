@@ -2,7 +2,7 @@ import argparse
 
 from src.finetune import FinetuneDispatcher
 from src.augmentation import Augmentation
-from src.pretrain import Pretrain
+from src.pretrain import Pretrain, PretrainDispatcher
 from src.utils import load_yaml_to_dict
 
 
@@ -18,9 +18,8 @@ def main(args: dict) -> None:
             augmentation = Augmentation(params, data_dir)
             augmentation.start()
         case "pretrain":
-            pretrain = Pretrain(params, data_dir)
-            pretrain.initialize_for_training()
-            pretrain.train()
+            pretrain_dispatcher = PretrainDispatcher(params, data_dir)
+            pretrain_dispatcher.start()
         case "finetune":
             finetune_dispatcher = FinetuneDispatcher(params, data_dir)
             finetune_dispatcher.start()
