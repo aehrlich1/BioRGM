@@ -1,6 +1,9 @@
 import os
 from pathlib import Path
 
+import random
+import string
+import csv
 import pandas as pd
 import torch
 import yaml
@@ -12,6 +15,20 @@ from rdkit.Chem import Mol
 from rdkit.Chem.MolStandardize.rdMolStandardize import Uncharger
 
 un = Uncharger()
+
+
+def generate_random_alphanumeric(length=8) -> str:
+    characters = string.ascii_lowercase + string.digits
+    random_sequence = "".join(random.choice(characters) for _ in range(length))
+    return random_sequence
+
+
+def save_dict_to_csv(data: list[dict], output_path: Path):
+    with open(output_path, "w", newline="") as file:
+        fieldnames = data[0].keys()
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(data)
 
 
 def neutralize_smiles(smiles: str) -> str:
@@ -104,8 +121,9 @@ def make_combinations(dictionary: dict, exclude_key: str = None) -> list[dict]:
 
 
 class PerformanceTracker:
-    def __init__(self, tracking_dir: Path):
+    def __init__(self, tracking_dir: Path, id_run: str):
         self.tracking_dir: Path = tracking_dir
+        self.id_run = id_run
         self.epoch = []
         self.train_loss = []
         self.train_roc_auc = []
@@ -125,7 +143,7 @@ class PerformanceTracker:
         self.save_roc_auc_plot()
 
     def save_loss_plot(self) -> None:
-        loss_plot_path = self.tracking_dir / "loss_plot.pdf"
+        loss_plot_path = self.tracking_dir / f"{self.id_run}_loss.pdf"
         fig, ax = plt.subplots(figsize=(10, 6), layout="constrained", dpi=300)
         ax.plot(self.epoch, self.train_loss, self.valid_loss)
         ax.grid(True)
@@ -137,7 +155,7 @@ class PerformanceTracker:
         print(f"Saved loss plot to: {loss_plot_path}")
 
     def save_roc_auc_plot(self) -> None:
-        roc_auc_plot_path = self.tracking_dir / "roc_auc_plot.pdf"
+        roc_auc_plot_path = self.tracking_dir / f"{self.id_run}_roc_auc.pdf"
         fig, ax = plt.subplots(figsize=(10, 6), layout="constrained", dpi=300)
         ax.plot(self.epoch, self.train_roc_auc, self.valid_roc_auc)
         ax.grid(True)
@@ -160,7 +178,17 @@ class PerformanceTracker:
                 "test_roc_auc": self.test_roc_auc,
             }
         )
-        df.to_csv(self.tracking_dir / "performance.csv", index=False)
+        df.to_csv(self.tracking_dir / f"{self.id_run}.csv", index=False)
+
+    def get_results(self) -> dict[str, float]:
+        return {
+            "train_loss": self.train_loss[-1],
+            "train_roc_auc": self.train_roc_auc[-1],
+            "valid_loss": self.valid_loss[-1],
+            "valid_roc_auc": self.valid_roc_auc[-1],
+            "test_loss": self.test_loss[-1],
+            "test_roc_auc": self.test_roc_auc[-1],
+        }
 
     def update_early_loss_state(self) -> None:
         if self.valid_loss[-1] < self.best_valid_loss:

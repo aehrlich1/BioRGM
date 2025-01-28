@@ -3,6 +3,7 @@ from pathlib import Path
 
 import torch
 import wandb
+from multiprocessing import Manager
 from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
@@ -16,7 +17,13 @@ from torchinfo import summary
 
 from src.model import FinetuneModel, CategoricalEncodingModel
 from src.pretrain import Pretrain
-from src.utils import save_dict_to_yaml, make_combinations, PerformanceTracker
+from src.utils import (
+    save_dict_to_yaml,
+    make_combinations,
+    PerformanceTracker,
+    generate_random_alphanumeric,
+    save_dict_to_csv,
+)
 
 
 class FinetuneDispatcher:
@@ -25,43 +32,46 @@ class FinetuneDispatcher:
         self.data_dir = data_dir
 
     def start(self) -> None:
-        with ProcessPoolExecutor(max_workers=8) as executor:
-            pretrain_model_names: list[str] = self._get_pretrain_model_names()
-            for pretrain_model_name in pretrain_model_names:
-                finetune_dir = self._create_finetune_dir(pretrain_model_name)
-                config_combinations = self._create_config_combinations(
-                    finetune_dir, pretrain_model_name
-                )
+        with Manager() as manager:
+            queue = manager.Queue()
+            with ProcessPoolExecutor(max_workers=None) as executor:
+                pretrain_model_names: list[str] = self._get_pretrain_model_names()
+                self.params.update({"pretrain_models": pretrain_model_names})
+                self.params.pop("task")
 
-                for conf_iteration_num, config_run in enumerate(config_combinations):
-                    conf_dir: Path = finetune_dir / f"conf_{conf_iteration_num:02d}"
-                    conf_dir.mkdir()
-                    save_dict_to_yaml(config_run, conf_dir / "config_run.yml")
+                for pretrain_model_name in pretrain_model_names:
+                    finetune_dir: Path = self._create_finetune_dir(pretrain_model_name)
+                    figs_dir: Path = finetune_dir / "figs"
+                    figs_dir.mkdir(exist_ok=True)
+                    # save_dict_to_yaml(config_combinations, finetune_dir)
 
-                    for run in range(config_run["runs"]):
-                        run_dir: Path = conf_dir / f"run_{run:02d}"
-                        run_dir.mkdir()
-
-                        for dataset in self.params["datasets"]:
-                            dataset_dir = run_dir / dataset
-                            dataset_dir.mkdir()
-                            config_single = self._create_config_single(
-                                config_run, dataset
-                            )
-
-                            save_dict_to_yaml(
-                                config_single, dataset_dir / "config_single.yml"
-                            )
-                            performance_tracker = PerformanceTracker(
-                                tracking_dir=dataset_dir
-                            )
+                    config_combinations: list[dict] = self._create_config_combinations(
+                        pretrain_model_name
+                    )
+                    for config_combination in config_combinations:
+                        for run in range(config_combination["runs"]):
+                            id_run = generate_random_alphanumeric(8)
+                            config_combination.update({"id_run": id_run})
+                            performance_tracker = PerformanceTracker(figs_dir, id_run)
                             finetune = Finetune(
-                                config_single, self.data_dir, performance_tracker
+                                config_combination,
+                                self.data_dir,
+                                performance_tracker,
+                                queue,
                             )
                             executor.submit(finetune.train)
 
-        print("Finetuning has finished. Data Evaluation to be started. ")
-        self.data_evaluation()
+            executor.shutdown()
+            result = []
+            while not queue.empty():
+                result.append(queue.get())
+
+            finetune_results_path = (
+                Path(self.data_dir) / "models" / "finetune_overview.csv"
+            )
+
+            save_dict_to_csv(result, finetune_results_path)
+            print(f"Finetune results saved to {finetune_results_path}")
 
     def _get_pretrain_model_names(self) -> list:
         if self.params["pretrain_models"] is None:
@@ -176,6 +186,29 @@ class FinetuneDispatcher:
         best_models_df = model_df.loc[model_df.groupby("model")["sum_roc_auc"].idxmax()]
         best_models_df.to_csv(models_dir / "model_results.csv", index=False)
 
+    def data_evaluation_improved(self) -> None:
+        # Read the results file
+        results_file = Path(self.data_dir) / "models" / "finetune_overview.csv"
+        df = pd.read_csv(results_file)
+        df.drop(
+            columns=[
+                "train_loss",
+                "train_roc_auc",
+                "valid_loss",
+                "valid_roc_auc",
+                "test_loss",
+            ],
+            inplace=True,
+        )
+
+        # Get all column names except the last one
+        columns_to_groupby = df.columns[:-1]
+
+        # Group by all columns except the last one and aggregate the last column
+        result = df.groupby(list(columns_to_groupby)).agg(["mean", "std"])
+        # print(result)
+
+
     @staticmethod
     def read_last_row_csv(file_path: Path) -> list:
         """
@@ -192,23 +225,20 @@ class FinetuneDispatcher:
         config_single["dataset"] = dataset
         return config_single
 
-    def _create_finetune_dir(self, pretrain_model_name):
+    def _create_finetune_dir(self, pretrain_model_name) -> Path:
         finetune_dir: Path = (
             Path(self.data_dir) / "models" / pretrain_model_name / "finetune"
         )
         finetune_dir.mkdir(exist_ok=True)
         return finetune_dir
 
-    def _create_config_combinations(
-        self, finetune_dir, pretrain_model_name
-    ) -> list[dict]:
+    def _create_config_combinations(self, pretrain_model_name: str) -> list[dict]:
         config_finetune: dict = self.params.copy()
         config_finetune.pop("pretrain_models")
         config_finetune["pretrain_model"] = pretrain_model_name
-        save_dict_to_yaml(config_finetune, finetune_dir / "config_finetune.yml")
-        # create cross_configs (exclude datasets) as a list
-        config_combinations = make_combinations(config_finetune, exclude_key="datasets")
-        return config_combinations
+
+        # TODO: is there no python function for this?
+        return make_combinations(config_finetune)
 
 
 class Finetune:
@@ -217,10 +247,12 @@ class Finetune:
         params: dict = None,
         data_dir=None,
         performance_tracker: PerformanceTracker = None,
+        queue=None,
     ) -> None:
         self.params = params
         self.data_dir = data_dir
         self.performance_tracker = performance_tracker
+        self.queue = queue
         self.pretrain_model_dir = None
         self.dataset = None
         self.train_dataloader = None
@@ -261,6 +293,9 @@ class Finetune:
                 break
 
         self.performance_tracker.save_performance()
+        final_results = self.performance_tracker.get_results()
+        submit = self.params | final_results
+        self.queue.put(submit)
         # wandb.finish()
 
     def _initialize_wandb(self) -> None:

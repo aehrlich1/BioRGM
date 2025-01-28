@@ -6,7 +6,6 @@ from concurrent.futures import ProcessPoolExecutor
 
 import wandb
 import torch
-import uuid
 from pathlib import Path
 from pytorch_metric_learning import losses, miners, samplers
 from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, BaseDistance
@@ -14,7 +13,8 @@ from torch_geometric.loader import DataLoader
 
 from src.data import PubchemDataset
 from src.model import PretrainModel, CategoricalEncodingModel, OneHotEncoderModel
-from src.utils import Checkpoint, read_config_file, make_combinations
+from src.utils import Checkpoint, read_config_file, make_combinations, generate_random_alphanumeric
+
 
 class PretrainDispatcher:
     def __init__(self, params: dict, data_dir: str) -> None:
@@ -22,7 +22,7 @@ class PretrainDispatcher:
         self.data_dir = data_dir
 
     def start(self) -> None:
-        with ProcessPoolExecutor(max_workers=8) as executor:
+        with ProcessPoolExecutor(max_workers=None) as executor:
             pretrain_configs: list[dict] = make_combinations(self.params)
             print(f"Number of pretraining configs: {len(pretrain_configs)}")
             for pretrain_config in pretrain_configs:
@@ -151,8 +151,8 @@ class Pretrain:
         )
 
     def _initialize_checkpoint(self) -> None:
-        output_dir_name = wandb.run.name
-        output_dir_name = str(uuid.uuid4())
+        # output_dir_name = wandb.run.name
+        output_dir_name = generate_random_alphanumeric(length=10)
         self.checkpoint = Checkpoint(self.data_dir, self.params, output_dir_name)
 
     def get_dim_h(self) -> int:

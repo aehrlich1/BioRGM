@@ -23,7 +23,7 @@ def main(args: dict) -> None:
         case "finetune":
             finetune_dispatcher = FinetuneDispatcher(params, data_dir)
             finetune_dispatcher.start()
-            finetune_dispatcher.data_evaluation()
+            finetune_dispatcher.data_evaluation_improved()
 
     print("Done")
 
