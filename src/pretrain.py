@@ -1,4 +1,3 @@
-import argparse
 import os
 import sys
 from concurrent.futures import ProcessPoolExecutor
@@ -12,7 +11,12 @@ from torch_geometric.loader import DataLoader
 
 from src.data import PubchemDataset
 from src.model import PretrainModel, CategoricalEncodingModel, OneHotEncoderModel
-from src.utils import Checkpoint, read_config_file, make_combinations, generate_random_alphanumeric
+from src.utils import (
+    Checkpoint,
+    read_config_file,
+    make_combinations,
+    generate_random_alphanumeric,
+)
 
 
 class PretrainDispatcher:
@@ -28,6 +32,7 @@ class PretrainDispatcher:
                 pretrain_model = Pretrain(pretrain_config, self.data_dir)
                 pretrain_model.initialize_for_training()
                 executor.submit(pretrain_model.train)
+
 
 class Pretrain:
     def __init__(self, params: dict = None, data_dir=None):
@@ -78,7 +83,9 @@ class Pretrain:
         self.params: dict = read_config_file(config_file_path)
 
         encoder_model = self._get_encoder_model(self.params["encoder"])
-        self.model = PretrainModel(encoder_model, self.params["dim_h"], self.params["dropout"])
+        self.model = PretrainModel(
+            encoder_model, self.params["dim_h"], self.params["dropout"]
+        )
         self.model.load_state_dict(torch.load(weights_file_path, weights_only=True))
 
     def load_random_model(self, encoder_model, dim_h, dropout) -> None:
@@ -192,121 +199,3 @@ class Pretrain:
                     f"Iteration {i}: Loss = {loss:.3g}, Mined triplets = {self.mining_fn.num_triplets}"
                 )
                 # wandb.log({"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets})
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Train a model with specific hyperparameters."
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        required=False,
-        default=32,
-        help="Batch size for training.",
-    )
-    parser.add_argument(
-        "--data_dir",
-        type=str,
-        required=True,
-        help="Absolute path to Root directory of dataset.",
-    )
-    parser.add_argument(
-        "--dim_h",
-        type=int,
-        required=False,
-        default=128,
-        help="Hidden dimensions size.",
-    )
-    parser.add_argument(
-        "--distance_metric",
-        type=str,
-        required=False,
-        default="euclidean",
-        help="Distance metric.",
-    )
-    parser.add_argument(
-        "--dropout",
-        type=float,
-        required=False,
-        default=0.1,
-        help="Dropout ratio.",
-    )
-    parser.add_argument(
-        "--encoder",
-        type=str,
-        required=False,
-        default="embedding",
-        help="Which encoder to use",
-        choices=["embedding", "one_hot"],
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        required=False,
-        default=5,
-        help="Number of epochs.",
-    )
-    parser.add_argument(
-        "--file_name",
-        type=str,
-        required=True,
-        default=5,
-        help="File name (including extension) of the triplet dataset.",
-    )
-    parser.add_argument(
-        "--finetune",
-        type=bool,
-        required=False,
-        default=False,
-        help="Whether to finetune and evaluate the model after each epoch.",
-    )
-    parser.add_argument(
-        "--lr",
-        type=float,
-        required=False,
-        default="1e-6",
-        help="Learning rate.",
-    )
-    parser.add_argument(
-        "--margin",
-        type=float,
-        required=False,
-        default="0.1",
-        help="Margin.",
-    )
-    parser.add_argument(
-        "--num_samples_per_class",
-        type=int,
-        required=False,
-        default="4",
-        help="Number of samples per class.",
-    )
-    parser.add_argument(
-        "--num_workers",
-        type=int,
-        required=False,
-        default="0",
-        help="Number of workers.",
-    )
-    parser.add_argument(
-        "--type_of_triplets",
-        type=str,
-        required=False,
-        default="all",
-        help="Type of triplets.",
-    )
-    parser.add_argument(
-        "--weight_decay",
-        type=float,
-        required=False,
-        default="5e-4",
-        help="Weight decay.",
-    )
-
-    args = parser.parse_args()
-    args_dict = vars(args)
-
-    pretrain = Pretrain(params=args_dict, data_dir=args_dict["data_dir"])
-    pretrain.initialize_for_training()
-    pretrain.train()
