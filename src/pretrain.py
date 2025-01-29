@@ -1,12 +1,11 @@
+import argparse
 import os
 import sys
-
-import argparse
 from concurrent.futures import ProcessPoolExecutor
-
-import wandb
-import torch
 from pathlib import Path
+
+import torch
+import wandb
 from pytorch_metric_learning import losses, miners, samplers
 from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, BaseDistance
 from torch_geometric.loader import DataLoader
@@ -22,7 +21,7 @@ class PretrainDispatcher:
         self.data_dir = data_dir
 
     def start(self) -> None:
-        with ProcessPoolExecutor(max_workers=None) as executor:
+        with ProcessPoolExecutor(max_workers=4) as executor:
             pretrain_configs: list[dict] = make_combinations(self.params)
             print(f"Number of pretraining configs: {len(pretrain_configs)}")
             for pretrain_config in pretrain_configs:
