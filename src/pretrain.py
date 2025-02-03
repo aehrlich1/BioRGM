@@ -23,22 +23,34 @@ class PretrainDispatcher:
     def __init__(self, params: dict, data_dir: str) -> None:
         self.params = params
         self.data_dir = data_dir
+        self.dataset = None
+
+        self._initialize_dataset()
+
+    def _initialize_dataset(self):
+        """
+        Create a shared dataset among all pretrain instances.
+        """
+        self.dataset = PubchemDataset(
+            root=os.path.join(self.data_dir, "processed"),
+            file_name=self.params["file_name"],
+        )
 
     def start(self) -> None:
-        with ProcessPoolExecutor(max_workers=4) as executor:
+        with ProcessPoolExecutor(max_workers=8) as executor:
             pretrain_configs: list[dict] = make_combinations(self.params)
             print(f"Number of pretraining configs: {len(pretrain_configs)}")
             for pretrain_config in pretrain_configs:
-                pretrain_model = Pretrain(pretrain_config, self.data_dir)
+                pretrain_model = Pretrain(pretrain_config, self.data_dir, self.dataset)
                 pretrain_model.initialize_for_training()
                 executor.submit(pretrain_model.train)
 
 
 class Pretrain:
-    def __init__(self, params: dict = None, data_dir=None):
+    def __init__(self, params: dict = None, data_dir=None, dataset=None):
         self.params = params
         self.data_dir = data_dir
-        self.dataset = None
+        self.dataset = dataset
         self.dataloader = None
         self.device = None
         self.encoder_model = None
@@ -54,7 +66,6 @@ class Pretrain:
 
     def initialize_for_training(self) -> None:
         # self._initialize_wandb()
-        self._initialize_dataset()
         self._initialize_sampler()
         self._initialize_dataloader()
         self._initialize_encoder_model()
@@ -97,12 +108,6 @@ class Pretrain:
 
     def _initialize_wandb(self) -> None:
         wandb.init(project="BioRGM", config=self.params, mode="online", reinit=True)
-
-    def _initialize_dataset(self) -> None:
-        self.dataset = PubchemDataset(
-            root=os.path.join(self.data_dir, "processed"),
-            file_name=self.params["file_name"],
-        )
 
     def _initialize_dataloader(self) -> None:
         self.dataloader = DataLoader(
