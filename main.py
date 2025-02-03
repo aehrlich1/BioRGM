@@ -1,8 +1,10 @@
 import argparse
+import os
 
+import torch.multiprocessing as mp
 from src.finetune import FinetuneDispatcher
 from src.augmentation import Augmentation
-from src.pretrain import Pretrain, PretrainDispatcher
+from src.pretrain import PretrainDispatcher
 from src.utils import load_yaml_to_dict
 
 
@@ -29,6 +31,7 @@ def main(args: dict) -> None:
 
 
 if __name__ == "__main__":
+    mp.set_start_method("spawn", force=True)
     parser = argparse.ArgumentParser(description="Config file and data directory.")
     parser.add_argument(
         "--config_filename",
@@ -39,7 +42,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_dir",
         type=str,
-        required=True,
+        required=False,
+        default=os.path.dirname(__file__) + "/data",
         help="Absolute path of the directory of the dataset.",
     )
 
