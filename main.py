@@ -1,7 +1,7 @@
 import argparse
-import os
 
 import torch.multiprocessing as mp
+from pathlib import Path
 from src.finetune import FinetuneDispatcher
 from src.augmentation import Augmentation
 from src.pretrain import PretrainDispatcher
@@ -25,7 +25,7 @@ def main(args: dict) -> None:
         case "finetune":
             finetune_dispatcher = FinetuneDispatcher(params, data_dir)
             finetune_dispatcher.start()
-            finetune_dispatcher.data_evaluation_improved()
+            finetune_dispatcher.data_evaluation()
 
     print("Done")
 
@@ -43,7 +43,7 @@ if __name__ == "__main__":
         "--data_dir",
         type=str,
         required=False,
-        default=os.path.dirname(__file__) + "/data",
+        default=str(Path(__file__).parent / "data"),
         help="Absolute path of the directory of the dataset.",
     )
 

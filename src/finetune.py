@@ -34,7 +34,7 @@ class FinetuneDispatcher:
     def start(self) -> None:
         with Manager() as manager:
             queue = manager.Queue()
-            with ProcessPoolExecutor(max_workers=None) as executor:
+            with ProcessPoolExecutor(max_workers=8) as executor:
                 pretrain_model_names: list[str] = self._get_pretrain_model_names()
                 self.params.update({"pretrain_models": pretrain_model_names})
                 self.params.pop("task")
@@ -49,12 +49,16 @@ class FinetuneDispatcher:
                         pretrain_model_name
                     )
                     for config_combination in config_combinations:
+                        print(
+                            f"Total number of finetune configurations: {len(config_combinations)} (x{config_combination['runs']} runs)."
+                        )
                         for run in range(config_combination["runs"]):
                             id_run = generate_random_alphanumeric(8)
-                            config_combination.update({"id_run": id_run})
+                            params = config_combination.copy()
+                            params.update({"id_run": id_run})
                             performance_tracker = PerformanceTracker(figs_dir, id_run)
                             finetune = Finetune(
-                                config_combination,
+                                params,
                                 self.data_dir,
                                 performance_tracker,
                                 queue,
@@ -86,128 +90,60 @@ class FinetuneDispatcher:
         return self.params["pretrain_models"]
 
     def data_evaluation(self) -> None:
-        """
-        Iterate through
-        """
-        column_names = [
-            "dataset",
-            "conf",
-            "train_loss",
-            "train_roc_auc",
-            "valid_loss",
-            "valid_roc_auc",
-            "test_loss",
-            "test_roc_auc",
-        ]
-
-        models_dir: Path = Path("./data/models")
-        model_dfs_list = []
-        for pretrain_model_name in self._get_pretrain_model_names():
-            model_dir: Path = models_dir / pretrain_model_name
-            finetune_dir: Path = model_dir / "finetune"
-            finetune_df = pd.DataFrame()
-
-            # get all conf directories
-            conf_dirs: list[Path] = [
-                d
-                for d in finetune_dir.iterdir()
-                if d.name.startswith("conf_") and d.is_dir()
-            ]
-            for conf_dir in conf_dirs:
-                conf_list = []
-                run_dirs: list[Path] = [
-                    d
-                    for d in conf_dir.iterdir()
-                    if d.name.startswith("run_") and d.is_dir()
-                ]
-                for run_dir in run_dirs:
-                    run_list = []
-                    dataset_dirs: list[Path] = [
-                        d for d in run_dir.iterdir() if d.is_dir()
-                    ]
-                    for dataset_dir in dataset_dirs:
-                        perf_list: list = self.read_last_row_csv(
-                            dataset_dir / "performance.csv"
-                        )
-                        run_list.append([dataset_dir.name, conf_dir.name] + perf_list)
-                    # save run_xx_results.csv
-                    # conf_list.extend(run_list)
-                    run_df = pd.DataFrame(run_list, columns=column_names)
-                    run_df.to_csv(run_dir / "run_results.csv", index=False)
-                    conf_list.extend(run_list)
-                # conf_xx_results.csv
-                conf_df = pd.DataFrame(conf_list, columns=column_names)
-                conf_df = conf_df.groupby(["dataset", "conf"]).agg(["mean", "std"])
-                conf_df = conf_df.reset_index()
-                # Save to CSV with flattened columns
-                conf_df.columns = pd.MultiIndex.from_tuples(conf_df.columns)
-                conf_df.columns = [
-                    "_".join(col).strip() if i > 1 else col[0]
-                    for i, col in enumerate(conf_df.columns)
-                ]
-                conf_df.to_csv(conf_dir / "conf_results.csv", index=False)
-                finetune_df = pd.concat([finetune_df, conf_df])
-            # finetune_results.csv
-            finetune_df.sort_values(by=["dataset", "conf"], inplace=True)
-            finetune_df.to_csv(finetune_dir / "finetune_results.csv", index=False)
-            finetune_df = finetune_df[
-                ["dataset", "conf", "test_roc_auc_mean", "test_roc_auc_std"]
-            ]
-            finetune_df["model"] = pretrain_model_name
-            model_dfs_list.append(finetune_df)
-
-        # model_results.csv
-        model_df = pd.concat(model_dfs_list, ignore_index=True)
-        # Pivot the DataFrame
-        model_df = model_df.pivot_table(index=["model", "conf"], columns="dataset")
-
-        # Flatten the MultiIndex columns
-        model_df.columns = [f"{col[1]}_{col[0]}" for col in model_df.columns]
-
-        # Reset the index to get the desired format
-        model_df = model_df.reset_index()
-
-        # Rename columns to match the desired output
-        model_df.columns.name = None
-
-        # Sort all columns alphabetically except 'model' and 'conf'
-        other_cols = sorted(
-            [col for col in model_df.columns if col not in ["model", "conf"]]
-        )
-        model_df = model_df[["model", "conf"] + other_cols]
-
-        # Add the 'sum_roc_auc' column by summing rows where the column name ends with 'mean'
-        mean_columns = [col for col in model_df.columns if col.endswith("mean")]
-        model_df["sum_roc_auc"] = model_df[mean_columns].sum(axis=1)
-
-        model_df.to_csv(models_dir / "model_results_overview.csv", index=False)
-
-        # Extract the row with the highest 'sum_roc_auc' for each model
-        best_models_df = model_df.loc[model_df.groupby("model")["sum_roc_auc"].idxmax()]
-        best_models_df.to_csv(models_dir / "model_results.csv", index=False)
-
-    def data_evaluation_improved(self) -> None:
         # Read the results file
         results_file = Path(self.data_dir) / "models" / "finetune_overview.csv"
         df = pd.read_csv(results_file)
-        df.drop(
+        df = df.drop(
             columns=[
                 "train_loss",
                 "train_roc_auc",
                 "valid_loss",
                 "valid_roc_auc",
                 "test_loss",
-            ],
-            inplace=True,
+            ]
         )
 
-        # Get all column names except the last one
-        columns_to_groupby = df.columns[:-1]
+        # Group by all columns except 'id_run' and 'test_roc_auc'
+        grouped = df.groupby(
+            [col for col in df.columns if col not in ["id_run", "test_roc_auc"]],
+            as_index=False,
+        )
 
-        # Group by all columns except the last one and aggregate the last column
-        result = df.groupby(list(columns_to_groupby)).agg(["mean", "std"])
-        # print(result)
+        # Aggregate only 'test_roc_auc' to calculate mean and std
+        result = grouped.agg(
+            {
+                "test_roc_auc": [
+                    "mean",
+                    "std",
+                ]  # Calculate mean and std for 'test_roc_auc'
+            }
+        )
 
+        # Flatten the multi-level column names
+        result.columns = [
+            f"{col[0]}_{col[1]}" if col[1] else col[0] for col in result.columns
+        ]
+        result = result[
+            ["dataset", "pretrain_model", "test_roc_auc_mean", "test_roc_auc_std"]
+        ]
+        # Pivot the DataFrame
+        pivoted_df = result.pivot(
+            index="pretrain_model",
+            columns="dataset",
+            values=["test_roc_auc_mean", "test_roc_auc_std"],
+        )
+        pivoted_df = pivoted_df.reset_index()
+        # Flatten the MultiIndex columns
+        pivoted_df.columns = [f"{col[1]}_{col[0]}" for col in pivoted_df.columns]
+
+        # Add the 'sum_roc_auc' column by summing rows where the column name ends with 'mean'
+        mean_columns = [col for col in pivoted_df.columns if col.endswith("mean")]
+        pivoted_df["sum_roc_auc"] = pivoted_df[mean_columns].sum(axis=1)
+
+        # Save
+        pivoted_df.to_csv(
+            Path(self.data_dir) / "models" / "finetune_results.csv", index=False
+        )
 
     @staticmethod
     def read_last_row_csv(file_path: Path) -> list:
