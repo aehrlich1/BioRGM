@@ -4,25 +4,23 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import torch
-import wandb
-from pytorch_metric_learning import losses, miners, samplers
-from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, BaseDistance
-from torch_geometric.loader import DataLoader
 import torch.multiprocessing as mp
+from pytorch_metric_learning import losses, miners, samplers
+from pytorch_metric_learning.distances import BaseDistance, CosineSimilarity, LpDistance
+from torch_geometric.loader import DataLoader
 
+import wandb
 from src.data import PubchemDataset
-from src.model import PretrainModel, CategoricalEncodingModel, OneHotEncoderModel
+from src.model import CategoricalEncodingModel, OneHotEncoderModel, PretrainModel
 from src.utils import (
     Checkpoint,
-    read_config_file,
     make_combinations,
-    generate_random_alphanumeric,
+    read_config_file,
 )
 
 
 class PretrainDispatcher:
     def __init__(self, params: dict, data_dir: str) -> None:
-
         self.params = params
         self.data_dir = data_dir
         self.dataset = None
@@ -49,7 +47,7 @@ class PretrainDispatcher:
                 # executor.submit(pretrain_model.train)
 
     def start_sequential(self) -> None:
-        print(f"Sequential Training selected.")
+        print("Sequential Training selected.")
 
         pretrain_configs: list[dict] = make_combinations(self.params)
         print(f"Number of pretraining configs: {len(pretrain_configs)}")
@@ -64,9 +62,7 @@ class PretrainDispatcher:
         print(f"Number of pretraining configs: {len(pretrain_configs)}")
 
         # Use PyTorch multiprocessing to spawn processes
-        mp.set_start_method(
-            "spawn", force=True
-        )  # Required for CUDA and multiprocessing
+        mp.set_start_method("spawn", force=True)  # Required for CUDA and multiprocessing
         processes = []
 
         for pretrain_config in pretrain_configs:
@@ -87,8 +83,8 @@ class PretrainDispatcher:
 
 
 class Pretrain:
-    def __init__(self, params: dict = None, data_dir=None, dataset=None):
-        self.params = params
+    def __init__(self, params: dict, data_dir=None, dataset=None):
+        self.params: dict = params
         self.data_dir = data_dir
         self.dataset = dataset
         self.dataloader = None
@@ -128,15 +124,11 @@ class Pretrain:
     def load_pretrained_model(self, model_name) -> None:
         # TODO: epoch_x.pth should be a parameter
         weights_file_path = Path(self.data_dir) / "models" / model_name / "epoch_4.pth"
-        config_file_path = (
-            Path(self.data_dir) / "models" / model_name / "config_pretrain.yml"
-        )
+        config_file_path = Path(self.data_dir) / "models" / model_name / "config_pretrain.yml"
         self.params: dict = read_config_file(config_file_path)
 
         encoder_model = self._get_encoder_model(self.params["encoder"])
-        self.model = PretrainModel(
-            encoder_model, self.params["dim_h"], self.params["dropout"]
-        )
+        self.model = PretrainModel(encoder_model, self.params["dim_h"], self.params["dropout"])
         self.model.load_state_dict(torch.load(weights_file_path, weights_only=True))
 
     def load_random_model(self, encoder_model, dim_h, dropout) -> None:
@@ -162,9 +154,7 @@ class Pretrain:
         print(f"From Pretrain, using device: {self.device}")
 
     def _initialize_encoder_model(self) -> None:
-        self.encoder_model = self._get_encoder_model(self.params["encoder"]).to(
-            self.device
-        )
+        self.encoder_model = self._get_encoder_model(self.params["encoder"]).to(self.device)
 
     def _initialize_model(self) -> None:
         self.model = PretrainModel(

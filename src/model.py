@@ -136,16 +136,11 @@ class CategoricalEmbeddingModel(nn.Module):
             sys.exit()
         self.embedding_dim = embedding_dim
         self.embeddings = nn.ModuleList(
-            [
-                nn.Embedding(num_categories[i], embedding_dim)
-                for i in range(len(num_categories))
-            ]
+            [nn.Embedding(num_categories[i], embedding_dim) for i in range(len(num_categories))]
         )
 
     def forward(self, x):
-        embedded_vars = [
-            self.embeddings[i](x[:, i]) for i in range(len(self.embeddings))
-        ]
+        embedded_vars = [self.embeddings[i](x[:, i]) for i in range(len(self.embeddings))]
 
         return torch.cat(embedded_vars, dim=-1)
 
@@ -192,7 +187,7 @@ class GIN(nn.Module):
 
 class ExtendedConnectivityFingerprintModel:
     def __init__(self):
-        self.fpgen = AllChem.GetMorganGenerator(radius=2, fpSize=1024)
+        self.fpgen = AllChem.GetMorganGenerator(radius=2, fpSize=1024)  # type: ignore
 
     def __call__(self, dataloader):
         mols = [Chem.MolFromSmiles(smiles) for smiles in dataloader.smiles]

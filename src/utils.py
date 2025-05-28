@@ -1,15 +1,14 @@
+import csv
 import os
-from pathlib import Path
-
 import random
 import string
-import csv
+import tempfile
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import pandas as pd
 import torch
 import yaml
-import tempfile
-import matplotlib.pyplot as plt
-
 from rdkit import Chem
 from rdkit.Chem import Mol
 from rdkit.Chem.MolStandardize.rdMolStandardize import Uncharger
@@ -60,12 +59,8 @@ class Checkpoint:
 
     def _create_output_dir(self):
         if self.output_dir_name is None:
-            self.output_dir_name = tempfile.mkdtemp(
-                dir=os.path.join(self.data_dir, "models")
-            )
-        self.output_dir_name = os.path.join(
-            self.data_dir, "models", self.output_dir_name
-        )
+            self.output_dir_name = tempfile.mkdtemp(dir=os.path.join(self.data_dir, "models"))
+        self.output_dir_name = os.path.join(self.data_dir, "models", self.output_dir_name)
         os.makedirs(self.output_dir_name)
 
     def _initialize_directory(self):

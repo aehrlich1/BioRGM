@@ -3,10 +3,8 @@ import random
 from multiprocessing import Pool
 from pathlib import Path
 
-from rdkit import Chem
-from rdkit import RDLogger
-from rdkit.Chem import AllChem
-from rdkit.Chem import Mol
+from rdkit import Chem, RDLogger
+from rdkit.Chem import AllChem, Mol
 
 from config.reactions import reaction_smarts_list
 from src.utils import neutralize_smiles
@@ -29,9 +27,7 @@ class Augmentation:
         """
         with open(self.input_file, "r") as file:
             with Pool(processes=self.processes) as pool:
-                products: list[list[str]] = pool.imap(
-                    self.process_smiles, iterable=enumerate(file)
-                )
+                products: list[list[str]] = pool.imap(self.process_smiles, iterable=enumerate(file))
                 products = [row for row in products if row is not None]
                 self.save_to_file(
                     f"{self.input_filename}_processed.csv",
@@ -64,10 +60,9 @@ class Augmentation:
             smiles_neutral = neutralize_smiles(smiles)
 
             products: list = [idx, smiles, smiles_neutral]
-            reactant: Mol = Chem.MolFromSmiles(
-                smiles_neutral
-            )  # returns None if there is an error
 
+            # returns None if there is an error
+            reactant: Mol | None = Chem.MolFromSmiles(smiles_neutral)
             if reactant is None:
                 return None
 

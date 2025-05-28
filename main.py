@@ -1,9 +1,10 @@
 import argparse
+from pathlib import Path
 
 import torch.multiprocessing as mp
-from pathlib import Path
-from src.finetune import FinetuneDispatcher
+
 from src.augmentation import Augmentation
+from src.finetune import FinetuneDispatcher
 from src.pretrain import PretrainDispatcher
 from src.utils import load_yaml_to_dict
 

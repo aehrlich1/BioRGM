@@ -1,12 +1,10 @@
 import warnings
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import Manager
 from pathlib import Path
 
-import torch
-import wandb
-from multiprocessing import Manager
-from concurrent.futures import ProcessPoolExecutor
-
 import pandas as pd
+import torch
 from sklearn.metrics import roc_auc_score
 from torch.nn import BCELoss
 from torch.optim import Adam
@@ -15,14 +13,15 @@ from torch_geometric.datasets import MoleculeNet
 from torch_geometric.loader import DataLoader
 from torchinfo import summary
 
-from src.model import FinetuneModel, CategoricalEncodingModel
+import wandb
+from src.model import CategoricalEncodingModel, FinetuneModel
 from src.pretrain import Pretrain
 from src.utils import (
-    save_dict_to_yaml,
-    make_combinations,
     PerformanceTracker,
     generate_random_alphanumeric,
+    make_combinations,
     save_dict_to_csv,
+    save_dict_to_yaml,
 )
 
 
@@ -70,9 +69,7 @@ class FinetuneDispatcher:
             while not queue.empty():
                 result.append(queue.get())
 
-            finetune_results_path = (
-                Path(self.data_dir) / "models" / "finetune_overview.csv"
-            )
+            finetune_results_path = Path(self.data_dir) / "models" / "finetune_overview.csv"
 
             save_dict_to_csv(result, finetune_results_path)
             print(f"Finetune results saved to {finetune_results_path}")
@@ -120,12 +117,8 @@ class FinetuneDispatcher:
         )
 
         # Flatten the multi-level column names
-        result.columns = [
-            f"{col[0]}_{col[1]}" if col[1] else col[0] for col in result.columns
-        ]
-        result = result[
-            ["dataset", "pretrain_model", "test_roc_auc_mean", "test_roc_auc_std"]
-        ]
+        result.columns = [f"{col[0]}_{col[1]}" if col[1] else col[0] for col in result.columns]
+        result = result[["dataset", "pretrain_model", "test_roc_auc_mean", "test_roc_auc_std"]]
         # Pivot the DataFrame
         pivoted_df = result.pivot(
             index="pretrain_model",
@@ -141,9 +134,7 @@ class FinetuneDispatcher:
         pivoted_df["sum_roc_auc"] = pivoted_df[mean_columns].sum(axis=1)
 
         # Save
-        pivoted_df.to_csv(
-            Path(self.data_dir) / "models" / "finetune_results.csv", index=False
-        )
+        pivoted_df.to_csv(Path(self.data_dir) / "models" / "finetune_results.csv", index=False)
 
     @staticmethod
     def read_last_row_csv(file_path: Path) -> list:
@@ -162,9 +153,7 @@ class FinetuneDispatcher:
         return config_single
 
     def _create_finetune_dir(self, pretrain_model_name) -> Path:
-        finetune_dir: Path = (
-            Path(self.data_dir) / "models" / pretrain_model_name / "finetune"
-        )
+        finetune_dir: Path = Path(self.data_dir) / "models" / pretrain_model_name / "finetune"
         finetune_dir.mkdir(exist_ok=True)
         return finetune_dir
 
@@ -180,12 +169,12 @@ class FinetuneDispatcher:
 class Finetune:
     def __init__(
         self,
-        params: dict = None,
+        params: dict,
+        performance_tracker: PerformanceTracker,
         data_dir=None,
-        performance_tracker: PerformanceTracker = None,
         queue=None,
     ) -> None:
-        self.params = params
+        self.params: dict = params
         self.data_dir = data_dir
         self.performance_tracker = performance_tracker
         self.queue = queue
@@ -246,9 +235,7 @@ class Finetune:
         self.dataset = self._get_dataset(molecule_net_data_dir=molecule_net_data_dir)
 
     def _initialize_dataloaders(self) -> None:
-        self.train_dataloader, self.valid_dataloader, self.test_dataloader = (
-            self._get_dataloaders()
-        )
+        self.train_dataloader, self.valid_dataloader, self.test_dataloader = self._get_dataloaders()
 
     def _initialize_num_output_tasks(self) -> None:
         self.num_output_tasks = torch.numel(self.dataset[0].y)

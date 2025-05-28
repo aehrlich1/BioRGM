@@ -1,17 +1,10 @@
 import os
-import torch_geometric
-import torch
-
 from pathlib import Path
-from torch_geometric.data import InMemoryDataset
+from typing import override
+
+import torch
+from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.utils.smiles import from_smiles
-
-
-def override(method):
-    """
-    Fix for @override decorator missing for python < 3.12
-    """
-    return method
 
 
 class PubchemDataset(InMemoryDataset):
@@ -26,13 +19,13 @@ class PubchemDataset(InMemoryDataset):
         super().__init__(root)
         self.load(self.processed_paths[0])
 
-    @override
     @property
+    @override
     def raw_dir(self) -> str:
         return self.root
 
-    @override
     @property
+    @override
     def processed_dir(self) -> str:
         return self.root
 
@@ -55,7 +48,7 @@ class PubchemDataset(InMemoryDataset):
                 smiles = smiles.strip()
 
                 y = torch.tensor(int(label), dtype=torch.int)
-                data: torch_geometric.data.Data = from_smiles(smiles)
+                data: Data = from_smiles(smiles)
 
                 data.y = y
                 data_list.append(data)
