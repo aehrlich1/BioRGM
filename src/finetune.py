@@ -34,7 +34,7 @@ class FinetuneDispatcher:
     def start(self) -> None:
         with Manager() as manager:
             queue = manager.Queue()
-            with ProcessPoolExecutor(max_workers=8) as executor:
+            with ProcessPoolExecutor(max_workers=32) as executor:
                 pretrain_model_names: list[str] = self._get_pretrain_model_names()
                 self.params.update({"pretrain_models": pretrain_model_names})
                 self.params.pop("task")
@@ -50,7 +50,7 @@ class FinetuneDispatcher:
                     )
                     for config_combination in config_combinations:
                         print(
-                            f"Total number of finetune configurations: {len(config_combinations)} (x{config_combination['runs']} runs)."
+                            f"Total number of finetune configurations: {len(config_combinations)} (x{config_combination['runs']})."
                         )
                         for run in range(config_combination["runs"]):
                             id_run = generate_random_alphanumeric(8)
@@ -328,9 +328,9 @@ class Finetune:
             out = self.finetune_model(data)
             loss = self.loss_fn(out, data.y)
             batch_loss += loss.item()
-            self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+            self.optimizer.zero_grad()
 
             y_true.append(data.y)
             y_pred.append(out.detach())
