@@ -1,11 +1,12 @@
 batch_size: 32
-dim_h: 128 # should be inferred from pretrain model
-datasets: ["BACE", "BBBP"] # ["BACE", "BBBP"]
+dim_h: 64 # should be inferred from pretrain model
+dataset: ["BACE", "BBBP", "ClinTox"] # ["BACE", "BBBP", "HIV", "ClinTox"]
 dropout: 0.1
-epochs: 10
-freeze_pretrain: [True] # True | False
+epochs: 200
+freeze_pretrain: True # True | False
 lr: 0.0005
-pretrain_models:
-  - "curious-armadillo-45" # null | <model_name>
-runs: 2 # How often to repeat the run
+pretrain_models: #  - "brisk-blaze-51" # null | <model_name>
+  - "yx7wugdrgn"
+pretrain_epoch: "epoch_49.pth"
+runs: 3 # How often to repeat the run
 task: "finetune"

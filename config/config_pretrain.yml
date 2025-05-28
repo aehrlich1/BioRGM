@@ -1,15 +1,15 @@
-"batch_size": [400, 800]
+"batch_size": [800]
 "dim_h": [64, 128, 256]
 "distance_metric": ["euclidean", "cosine"]
-"dropout": [0.1, 0.2, 0.5]
-"encoder": ["one_hot", "embedding"]
+"dropout": [0.1, 0.2]
+"encoder": ["embedding"]
 "epochs": 5
 "file_name": "pubchem_100k_triplets.csv"
 "finetune": False # Do not evaluate model with finetuning tasks
-"lr": [1e-5, 1e-6]
-"margin": [0.1, 0.2, 0.4]
-"num_samples_per_class": [4, 8]
+"lr": [1.0e-7, 1.0e-6]
+"margin": [0.2, 0.4]
+"num_samples_per_class": [32]
 "num_workers": 0
 "task": "pretrain" # augmentation | pretrain | finetune
 "type_of_triplets": "all"
-"weight_decay": [1e-5, 5e-4]
+"weight_decay": [1.0e-5]
