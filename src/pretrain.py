@@ -8,6 +8,7 @@ import wandb
 from pytorch_metric_learning import losses, miners, samplers
 from pytorch_metric_learning.distances import CosineSimilarity, LpDistance, BaseDistance
 from torch_geometric.loader import DataLoader
+import torch.multiprocessing as mp
 
 from src.data import PubchemDataset
 from src.model import PretrainModel, CategoricalEncodingModel, OneHotEncoderModel
@@ -21,6 +22,7 @@ from src.utils import (
 
 class PretrainDispatcher:
     def __init__(self, params: dict, data_dir: str) -> None:
+
         self.params = params
         self.data_dir = data_dir
         self.dataset = None
@@ -37,13 +39,51 @@ class PretrainDispatcher:
         )
 
     def start(self) -> None:
-        with ProcessPoolExecutor(max_workers=8) as executor:
+        # with ProcessPoolExecutor(max_workers=4) as executor:
+        with mp.Pool(processes=8) as pool:
             pretrain_configs: list[dict] = make_combinations(self.params)
             print(f"Number of pretraining configs: {len(pretrain_configs)}")
             for pretrain_config in pretrain_configs:
                 pretrain_model = Pretrain(pretrain_config, self.data_dir, self.dataset)
                 pretrain_model.initialize_for_training()
-                executor.submit(pretrain_model.train)
+                # executor.submit(pretrain_model.train)
+
+    def start_sequential(self) -> None:
+        print(f"Sequential Training selected.")
+
+        pretrain_configs: list[dict] = make_combinations(self.params)
+        print(f"Number of pretraining configs: {len(pretrain_configs)}")
+        for pretrain_config in pretrain_configs:
+            pretrain_model = Pretrain(pretrain_config, self.data_dir, self.dataset)
+            pretrain_model.initialize_for_training()
+            pretrain_model.train()
+
+    def start_concurrent(self) -> None:
+        # Generate all pretraining configurations
+        pretrain_configs: list[dict] = make_combinations(self.params)
+        print(f"Number of pretraining configs: {len(pretrain_configs)}")
+
+        # Use PyTorch multiprocessing to spawn processes
+        mp.set_start_method(
+            "spawn", force=True
+        )  # Required for CUDA and multiprocessing
+        processes = []
+
+        for pretrain_config in pretrain_configs:
+            # Create a Pretrain instance for each configuration
+            pretrain_model = Pretrain(pretrain_config, self.data_dir, self.dataset)
+            pretrain_model.initialize_for_training()
+
+            # Spawn a new process for training
+            process = mp.Process(target=pretrain_model.train)
+            process.start()
+            processes.append(process)
+
+        # Wait for all processes to complete
+        for process in processes:
+            process.join()
+
+        print("All pretraining processes completed.")
 
 
 class Pretrain:
@@ -65,7 +105,7 @@ class Pretrain:
         self._initialize_device()
 
     def initialize_for_training(self) -> None:
-        # self._initialize_wandb()
+        self._initialize_wandb()
         self._initialize_sampler()
         self._initialize_dataloader()
         self._initialize_encoder_model()
@@ -83,7 +123,7 @@ class Pretrain:
             self._train_loop()
             self.checkpoint.save(self.model, epoch)
 
-        # wandb.finish()
+        wandb.finish()
 
     def load_pretrained_model(self, model_name) -> None:
         # TODO: epoch_x.pth should be a parameter
@@ -162,8 +202,8 @@ class Pretrain:
         )
 
     def _initialize_checkpoint(self) -> None:
-        # output_dir_name = wandb.run.name
-        output_dir_name = generate_random_alphanumeric(length=10)
+        output_dir_name = wandb.run.name
+        # output_dir_name = generate_random_alphanumeric(length=10)
         self.checkpoint = Checkpoint(self.data_dir, self.params, output_dir_name)
 
     def get_dim_h(self) -> int:
@@ -203,4 +243,4 @@ class Pretrain:
                 print(
                     f"Iteration {i}: Loss = {loss:.3g}, Mined triplets = {self.mining_fn.num_triplets}"
                 )
-                # wandb.log({"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets})
+                wandb.log({"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets})
