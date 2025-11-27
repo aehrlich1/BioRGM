@@ -32,7 +32,7 @@ def save_dict_to_csv(data: list[dict], output_path: Path):
 
 def neutralize_smiles(smiles: str) -> str:
     try:
-        mol: Mol = Chem.MolFromSmiles(smiles)
+        mol: Mol | None = Chem.MolFromSmiles(smiles)
         neutralized_mol = un.uncharge(mol)
     except Chem.AtomValenceException:
         print(f"Could not neutralize smiles: '{smiles}' Returning empty string.")

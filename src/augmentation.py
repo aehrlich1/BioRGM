@@ -70,7 +70,7 @@ class Augmentation:
                 product: str = self.run_reaction(smiles_neutral, reactant, rxn_smarts)
                 products.append(product)
 
-        except Exception as e:
+        except Exception:
             print(
                 f'Error while processing {smiles} in "process_smiles" function. '
                 f"Returning None instead."
@@ -80,9 +80,7 @@ class Augmentation:
         return products
 
     def generate_header(self) -> str:
-        reaction_ids: list[int] = list(range(len(self.reaction_smarts)))
-        reaction_ids: list[str] = [f"rxn_{i:03}" for i in reaction_ids]
-        reaction_ids: str = ",".join(reaction_ids)
+        reaction_ids = ",".join(f"rxn_{i:03}" for i in range(len(self.reaction_smarts)))
         header = f"id,smiles,smiles_neutral,{reaction_ids}\n"
         return header
 
