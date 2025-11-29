@@ -1,4 +1,0 @@
-input_filename: "pubchem_1k.txt"
-processes: null # null gets interpreted as None
-rxn_smarts_filename: "reactions.py"
-task: "augmentation"

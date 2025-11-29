@@ -1,9 +1,24 @@
+[project]
+name = "biorgm"
+version = "0.1.0"
+requires-python = ">=3.12"
+readme = "README.md"
+
+[project.scripts]
+biorgm-augment = "biorgm.augmentation:main"
+biorgm-pretrain = "biorgm.pretrain:main"
+biorgm-finetune = "biorgm.finetune:main"
+
 [tool.ruff]
-target-version = "py313"
+target-version = "py312"
 line-length = 100
 select = ["E", "F", "W", "C", "N", "I"]
-# F401: Moduel imported but unused; F403: undable to detect undefined names
+# F401: Module imported but unused; F403: unable to detect undefined names
 ignore = ["F401", "F403"]
+
+[tool.ruff.format]
+line-ending = "lf"
+quote-style = "double"
 
 [tool.pylance]
 typeCheckingMode = "basic"
