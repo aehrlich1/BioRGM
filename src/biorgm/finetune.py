@@ -14,14 +14,13 @@ from torch_geometric.loader import DataLoader
 from torchinfo import summary
 
 import wandb
-from src.model import CategoricalEncodingModel, FinetuneModel
-from src.pretrain import Pretrain
-from src.utils import (
+from biorgm.model import CategoricalEncodingModel, FinetuneModel
+from biorgm.pretrain import Pretrain
+from biorgm.utils import (
     PerformanceTracker,
     generate_random_alphanumeric,
     make_combinations,
     save_dict_to_csv,
-    save_dict_to_yaml,
 )
 
 

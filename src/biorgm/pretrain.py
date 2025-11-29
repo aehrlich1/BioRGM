@@ -1,6 +1,6 @@
+import argparse
 import os
 import sys
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import torch
@@ -10,13 +10,40 @@ from pytorch_metric_learning.distances import BaseDistance, CosineSimilarity, Lp
 from torch_geometric.loader import DataLoader
 
 import wandb
-from src.data import PubchemDataset
-from src.model import CategoricalEncodingModel, OneHotEncoderModel, PretrainModel
-from src.utils import (
-    Checkpoint,
-    make_combinations,
-    read_config_file,
-)
+from biorgm.data import PubchemDataset
+from biorgm.model import CategoricalEncodingModel, OneHotEncoderModel, PretrainModel
+from biorgm.utils import Checkpoint, make_combinations, read_config_file
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch_size", type=int, default=96)
+    parser.add_argument("--dim_h", type=int, default=32)
+    parser.add_argument("--distance_metric", type=str, default="cosine")
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--encoder", type=str, default="embedding")
+    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--file_name", type=str, default="pubchem_1k_triplets.csv")
+    parser.add_argument("--finetune", type=str, default=False)
+    parser.add_argument("--lr", type=float, default=1.0e-6)
+    parser.add_argument("--margin", type=float, default=0.2)
+    parser.add_argument("--num_samples_per_class", type=int, default=2)
+    parser.add_argument("--num_workers", type=int, default=0)
+    parser.add_argument("--type_of_triplets", type=str, default="all")
+    parser.add_argument("--weight_decay", type=float, default=5.0e-4)
+
+    args = parser.parse_args()
+    params: dict = vars(args)
+
+    data_dir = Path("/srv/home/users/anatole93cs/src/BioRGM/data/pubchem")
+    dataset = PubchemDataset(
+        root=data_dir / "processed",
+        file_name=params["file_name"],
+    )
+
+    pretrain = Pretrain(params, data_dir, dataset)
+    pretrain.initialize_for_training()
+    pretrain.train()
 
 
 class PretrainDispatcher:
@@ -234,3 +261,7 @@ class Pretrain:
                     f"Iteration {i}: Loss = {loss:.3g}, Mined triplets = {self.mining_fn.num_triplets}"
                 )
                 wandb.log({"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets})
+
+
+if __name__ == "__main__":
+    main()

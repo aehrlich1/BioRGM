@@ -14,9 +14,9 @@ class PubchemDataset(InMemoryDataset):
     root directory.
     """
 
-    def __init__(self, root: str, file_name: str):
+    def __init__(self, root: str | Path, file_name: str):
         self.file_name = file_name
-        super().__init__(root)
+        super().__init__(str(root))
         self.load(self.processed_paths[0])
 
     @property

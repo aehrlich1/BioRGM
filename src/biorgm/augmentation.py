@@ -1,3 +1,4 @@
+import argparse
 import os
 import random
 from multiprocessing import Pool
@@ -6,10 +7,22 @@ from pathlib import Path
 from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem, Mol
 
-from config.reactions import reaction_smarts_list
-from src.utils import neutralize_smiles
+from biorgm.reactions import reaction_smarts_list
+from biorgm.utils import neutralize_smiles
 
 RDLogger.DisableLog("rdApp.*")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input_filename", type=str, default="pubchem_1k.txt")
+    parser.add_argument("--processes", type=int, default=1)
+
+    args = parser.parse_args()
+    params: dict = vars(args)
+
+    augmentation = Augmentation(params, "/srv/home/users/anatole93cs/src/BioRGM/data/pubchem")
+    augmentation.start()
 
 
 class Augmentation:
@@ -44,9 +57,6 @@ class Augmentation:
                 self.save_to_file(
                     f"{self.input_filename}_triplets.csv", "label,smiles\n", flat_list
                 )
-
-    def register_reaction_smarts(self, rxn_smarts: list[str]):
-        self.reaction_smarts.extend(rxn_smarts)
 
     def process_smiles(self, idx_smiles: tuple[int, str]) -> list[str] | None:
         """
@@ -127,3 +137,7 @@ class Augmentation:
             return ""
 
         return product_smiles if product_smiles != smiles else ""
+
+
+if __name__ == "__main__":
+    main()

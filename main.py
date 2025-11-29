@@ -44,7 +44,7 @@ if __name__ == "__main__":
         "--data_dir",
         type=str,
         required=False,
-        default=str(Path(__file__).parent / "data"),
+        default=str(Path(__file__).parent / "data" / "pubchem"),
         help="Absolute path of the directory of the dataset.",
     )
 

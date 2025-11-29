@@ -6,7 +6,7 @@ from scipy.spatial.distance import pdist
 from torch_geometric.datasets import MoleculeNet
 from torch_geometric.loader import DataLoader
 
-from src.model import ExtendedConnectivityFingerprintModel
+from biorgm.model import ExtendedConnectivityFingerprintModel
 
 
 class Repra:
