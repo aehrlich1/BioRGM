@@ -46,69 +46,6 @@ def main():
     pretrain.train()
 
 
-class PretrainDispatcher:
-    def __init__(self, params: dict, data_dir: str) -> None:
-        self.params = params
-        self.data_dir = data_dir
-        self.dataset = None
-
-        self._initialize_dataset()
-
-    def _initialize_dataset(self):
-        """
-        Create a shared dataset among all pretrain instances.
-        """
-        self.dataset = PubchemDataset(
-            root=os.path.join(self.data_dir, "processed"),
-            file_name=self.params["file_name"],
-        )
-
-    def start(self) -> None:
-        # with ProcessPoolExecutor(max_workers=4) as executor:
-        with mp.Pool(processes=8) as pool:
-            pretrain_configs: list[dict] = make_combinations(self.params)
-            print(f"Number of pretraining configs: {len(pretrain_configs)}")
-            for pretrain_config in pretrain_configs:
-                pretrain_model = Pretrain(pretrain_config, self.data_dir, self.dataset)
-                pretrain_model.initialize_for_training()
-                # executor.submit(pretrain_model.train)
-
-    def start_sequential(self) -> None:
-        print("Sequential Training selected.")
-
-        pretrain_configs: list[dict] = make_combinations(self.params)
-        print(f"Number of pretraining configs: {len(pretrain_configs)}")
-        for pretrain_config in pretrain_configs:
-            pretrain_model = Pretrain(pretrain_config, self.data_dir, self.dataset)
-            pretrain_model.initialize_for_training()
-            pretrain_model.train()
-
-    def start_concurrent(self) -> None:
-        # Generate all pretraining configurations
-        pretrain_configs: list[dict] = make_combinations(self.params)
-        print(f"Number of pretraining configs: {len(pretrain_configs)}")
-
-        # Use PyTorch multiprocessing to spawn processes
-        mp.set_start_method("spawn", force=True)  # Required for CUDA and multiprocessing
-        processes = []
-
-        for pretrain_config in pretrain_configs:
-            # Create a Pretrain instance for each configuration
-            pretrain_model = Pretrain(pretrain_config, self.data_dir, self.dataset)
-            pretrain_model.initialize_for_training()
-
-            # Spawn a new process for training
-            process = mp.Process(target=pretrain_model.train)
-            process.start()
-            processes.append(process)
-
-        # Wait for all processes to complete
-        for process in processes:
-            process.join()
-
-        print("All pretraining processes completed.")
-
-
 class Pretrain:
     def __init__(self, params: dict, dataset=None):
         self.params: dict = params
