@@ -1,3 +1,4 @@
+import argparse
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Manager
@@ -22,6 +23,32 @@ from biorgm.utils import (
     make_combinations,
     save_dict_to_csv,
 )
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--dim_h", type=int, default=32)
+    parser.add_argument("--dataset", type=str, default="BACE")
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--freeze_pretrain", type=bool, default=True)
+    parser.add_argument("--lr", type=float, default=5.0e-4)
+    parser.add_argument("--pretrain_model", type=str, default=None)
+    parser.add_argument("--runs", type=int, default=3)
+
+    args = parser.parse_args()
+
+    data_dir = Path("data")
+    params: dict = vars(args)
+
+    tracking_dir = Path("checkpoints/finetuned") / generate_random_alphanumeric(8)
+    tracking_dir.mkdir(exist_ok=True)
+    id_run = "1"
+
+    pt = PerformanceTracker(tracking_dir=tracking_dir, id_run=id_run)
+    finetune = Finetune(params, pt, data_dir, None)
+    finetune.train()
 
 
 class FinetuneDispatcher:
@@ -75,7 +102,7 @@ class FinetuneDispatcher:
 
     def _get_pretrain_model_names(self) -> list:
         if self.params["pretrain_models"] is None:
-            models_dir: Path = Path(self.data_dir) / "models"
+            models_dir: Path = Path(self.data_dir)
             pretrain_model_names = [
                 pretrain_model.stem
                 for pretrain_model in models_dir.iterdir()
@@ -219,7 +246,11 @@ class Finetune:
         self.performance_tracker.save_performance()
         final_results = self.performance_tracker.get_results()
         submit = self.params | final_results
-        self.queue.put(submit)
+        save_dict_to_csv([submit], self.performance_tracker.tracking_dir / "results.csv")
+        # self.queue.put(submit)
+
+        # save results
+
         # wandb.finish()
 
     def _initialize_wandb(self) -> None:
@@ -240,7 +271,7 @@ class Finetune:
         self.num_output_tasks = torch.numel(self.dataset[0].y)
 
     def _initialize_pretrain_model(self) -> None:
-        pretrain = Pretrain(data_dir=self.data_dir)
+        pretrain = Pretrain(None)
 
         if self.params["pretrain_model"] is None:
             encoder_model = CategoricalEncodingModel().to(self.device)
@@ -250,8 +281,8 @@ class Finetune:
             )
         else:
             pretrain.load_pretrained_model(self.params["pretrain_model"])
+            self.params["dim_h"] = pretrain.get_dim_h()
 
-        self.params["dim_h"] = pretrain.get_dim_h()
         self.pretrain_model = pretrain.model
 
     def _initialize_finetune_model(self) -> None:
@@ -387,3 +418,7 @@ class Finetune:
         self.performance_tracker.log({"test_roc_auc": roc_auc})
 
         print(f"ROC AUC Test: {roc_auc}")
+
+
+if __name__ == "__main__":
+    main()

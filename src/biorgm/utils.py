@@ -50,8 +50,8 @@ def read_config_file(file_path) -> dict:
 
 
 class Checkpoint:
-    def __init__(self, data_dir, params, output_dir_name=None):
-        self.data_dir = data_dir
+    def __init__(self, params, output_dir_name=None):
+        self.ckpt_dir = Path("checkpoints/pretrained")
         self.params = params
         self.output_dir_name = output_dir_name
 
@@ -59,16 +59,16 @@ class Checkpoint:
 
     def _create_output_dir(self):
         if self.output_dir_name is None:
-            self.output_dir_name = tempfile.mkdtemp(dir=os.path.join(self.data_dir, "models"))
-        self.output_dir_name = os.path.join(self.data_dir, "models", self.output_dir_name)
+            self.output_dir_name = tempfile.mkdtemp(dir=self.ckpt_dir)
+        self.output_dir_name = self.ckpt_dir / self.output_dir_name
         os.makedirs(self.output_dir_name)
 
     def _initialize_directory(self):
-        os.makedirs(os.path.join(self.data_dir, "models"), exist_ok=True)
+        os.makedirs(self.ckpt_dir, exist_ok=True)
         self._create_output_dir()
         output = {**self.params}
 
-        with open(self.output_dir_name + "/config_pretrain.yml", "w") as outfile:
+        with open(self.output_dir_name / "config_pretrain.yml", "w") as outfile:
             yaml.dump(output, outfile, default_flow_style=False)
 
         print(f"Created directory {self.output_dir_name}")

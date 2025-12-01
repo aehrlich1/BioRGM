@@ -35,13 +35,13 @@ def main():
     args = parser.parse_args()
     params: dict = vars(args)
 
-    data_dir = Path("/srv/home/users/anatole93cs/src/BioRGM/data/pubchem")
+    data_dir = Path("data")
     dataset = PubchemDataset(
-        root=data_dir / "processed",
+        root=data_dir / "pubchem" / "processed",
         file_name=params["file_name"],
     )
 
-    pretrain = Pretrain(params, data_dir, dataset)
+    pretrain = Pretrain(params, dataset)
     pretrain.initialize_for_training()
     pretrain.train()
 
@@ -110,9 +110,8 @@ class PretrainDispatcher:
 
 
 class Pretrain:
-    def __init__(self, params: dict, data_dir=None, dataset=None):
+    def __init__(self, params: dict, dataset=None):
         self.params: dict = params
-        self.data_dir = data_dir
         self.dataset = dataset
         self.dataloader = None
         self.device = None
@@ -150,8 +149,8 @@ class Pretrain:
 
     def load_pretrained_model(self, model_name) -> None:
         # TODO: epoch_x.pth should be a parameter
-        weights_file_path = Path(self.data_dir) / "models" / model_name / "epoch_4.pth"
-        config_file_path = Path(self.data_dir) / "models" / model_name / "config_pretrain.yml"
+        weights_file_path = Path("checkpoints/pretrained") / model_name / "epoch_4.pth"
+        config_file_path = Path("checkpoints/pretrained") / model_name / "config_pretrain.yml"
         self.params: dict = read_config_file(config_file_path)
 
         encoder_model = self._get_encoder_model(self.params["encoder"])
@@ -221,7 +220,7 @@ class Pretrain:
     def _initialize_checkpoint(self) -> None:
         output_dir_name = wandb.run.name
         # output_dir_name = generate_random_alphanumeric(length=10)
-        self.checkpoint = Checkpoint(self.data_dir, self.params, output_dir_name)
+        self.checkpoint = Checkpoint(self.params, output_dir_name)
 
     def get_dim_h(self) -> int:
         return self.params["dim_h"]

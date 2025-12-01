@@ -15,6 +15,7 @@ class PubchemDataset(InMemoryDataset):
     """
 
     def __init__(self, root: str | Path, file_name: str):
+        print(f"Current working directory: {Path.cwd()}")
         self.file_name = file_name
         super().__init__(str(root))
         self.load(self.processed_paths[0])
@@ -31,7 +32,8 @@ class PubchemDataset(InMemoryDataset):
 
     @property
     def raw_file_names(self) -> str:
-        return os.path.join(self.raw_dir, self.file_name)
+        # return os.path.join(self.raw_dir, self.file_name)
+        return self.file_name
 
     @property
     def processed_file_names(self) -> str:

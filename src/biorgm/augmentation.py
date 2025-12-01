@@ -21,14 +21,15 @@ def main():
     args = parser.parse_args()
     params: dict = vars(args)
 
-    augmentation = Augmentation(params, "/srv/home/users/anatole93cs/src/BioRGM/data/pubchem")
+    data_dir = Path("data/pubchem")
+    augmentation = Augmentation(params, data_dir)
     augmentation.start()
 
 
 class Augmentation:
-    def __init__(self, params: dict, data_dir: str):
+    def __init__(self, params: dict, data_dir: Path):
         self.input_filename = Path(params["input_filename"]).stem
-        self.input_file = Path(data_dir) / "raw" / params["input_filename"]
+        self.input_file = data_dir / "raw" / params["input_filename"]
         self.data_dir = data_dir
         self.processes = params["processes"]
         self.reaction_smarts = reaction_smarts_list
