@@ -4,6 +4,7 @@ __pycache__/
 .idea/
 .ipynb_checkpoints/
 /data/
+/checkpoints/
 /tests/data/
 logs/
 wandb/
