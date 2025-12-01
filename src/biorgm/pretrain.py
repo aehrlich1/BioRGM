@@ -34,10 +34,7 @@ def main():
     params: dict = vars(args)
 
     data_dir = Path("data")
-    dataset = PubchemDataset(
-        root=data_dir / "pubchem" / "processed",
-        file_name=params["file_name"],
-    )
+    dataset = PubchemDataset(root=data_dir / "pubchem" / "processed", file_name=params["file_name"])
 
     pretrain = Pretrain(params, dataset)
     pretrain.initialize_for_training()
@@ -94,10 +91,6 @@ class Pretrain:
 
     def load_random_model(self, encoder_model, dim_h, dropout) -> None:
         self.model = PretrainModel(encoder_model, dim_h, dropout).to(self.device)
-
-    def evaluate_model(self, datasets: list) -> None:
-        # TODO: Implement evaluation
-        pass
 
     def _initialize_wandb(self) -> None:
         wandb.init(project="BioRGM", config=self.params, mode="online", reinit=True)
