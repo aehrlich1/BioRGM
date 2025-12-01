@@ -1,5 +1,4 @@
 import argparse
-import sys
 from pathlib import Path
 
 import torch
@@ -13,181 +12,186 @@ from biorgm.model import CategoricalEncodingModel, OneHotEncoderModel, PretrainM
 from biorgm.utils import Checkpoint, read_config_file
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", type=int, default=96)
-    parser.add_argument("--dim_h", type=int, default=32)
-    parser.add_argument("--distance_metric", type=str, default="cosine")
-    parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--encoder", type=str, default="embedding")
-    parser.add_argument("--epochs", type=int, default=5)
-    parser.add_argument("--file_name", type=str, default="pubchem_1k_triplets.csv")
-    parser.add_argument("--finetune", type=str, default=False)
-    parser.add_argument("--lr", type=float, default=1.0e-6)
-    parser.add_argument("--margin", type=float, default=0.2)
-    parser.add_argument("--num_samples_per_class", type=int, default=2)
-    parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument("--type_of_triplets", type=str, default="all")
-    parser.add_argument("--weight_decay", type=float, default=5.0e-4)
-
-    args = parser.parse_args()
-    params: dict = vars(args)
-
-    data_dir = Path("data")
-    dataset = PubchemDataset(root=data_dir / "pubchem" / "processed", file_name=params["file_name"])
-
-    pretrain = Pretrain(params, dataset)
-    pretrain.initialize_for_training()
-    pretrain.train()
+def get_distance_metric(metric_name: str) -> BaseDistance:
+    if metric_name == "euclidean":
+        return LpDistance(normalize_embeddings=True, p=2, power=1)
+    elif metric_name == "cosine":
+        return CosineSimilarity()
+    else:
+        raise ValueError(f"Unknown distance metric: {metric_name}")
 
 
-class Pretrain:
-    def __init__(self, params: dict, dataset=None):
-        self.params: dict = params
+def create_encoder(encoder_type: str, device: str):
+    if encoder_type == "embedding":
+        return CategoricalEncodingModel().to(device)
+    elif encoder_type == "one_hot":
+        return OneHotEncoderModel().to(device)
+    else:
+        raise ValueError(f"Unknown encoder type: {encoder_type}")
+
+
+def create_pretrain_model(config: dict, device: str) -> PretrainModel:
+    encoder = create_encoder(config["encoder"], device)
+    model = PretrainModel(encoder=encoder, dim_h=config["dim_h"], dropout=config["dropout"])
+    return model.to(device)
+
+
+def create_dataloader(dataset, batch_size: int, num_workers: int, sampler=None) -> DataLoader:
+    return DataLoader(dataset, batch_size=batch_size, num_workers=num_workers, sampler=sampler)
+
+
+def create_optimizer(model: torch.nn.Module, config: dict) -> torch.optim.Optimizer:
+    return torch.optim.Adam(
+        params=model.parameters(),
+        lr=config["lr"],
+        weight_decay=config["weight_decay"],
+    )
+
+
+def create_sampler(dataset, config: dict) -> samplers.MPerClassSampler:
+    return samplers.MPerClassSampler(
+        labels=dataset.y,
+        m=config["num_samples_per_class"],
+        batch_size=config["batch_size"],
+        length_before_new_iter=len(dataset),
+    )
+
+
+def create_loss_fn(config: dict) -> losses.TripletMarginLoss:
+    distance = get_distance_metric(config["distance_metric"])
+    return losses.TripletMarginLoss(margin=config["margin"], distance=distance)
+
+
+def create_mining_fn(config: dict) -> miners.TripletMarginMiner:
+    distance = get_distance_metric(config["distance_metric"])
+    return miners.TripletMarginMiner(
+        margin=config["margin"],
+        distance=distance,
+        type_of_triplets=config["type_of_triplets"],
+    )
+
+
+def load_pretrained_model(
+    model_name: str,
+    device: str,
+    epoch: int = 4,
+) -> tuple[PretrainModel, dict]:
+    checkpoint_dir = Path("checkpoints/pretrained") / model_name
+    weights_path = checkpoint_dir / f"epoch_{epoch}.pth"
+    config_path = checkpoint_dir / "config_pretrain.yml"
+
+    if not weights_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {weights_path}")
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config not found: {config_path}")
+
+    config = read_config_file(config_path)
+    model = create_pretrain_model(config, device)
+    model.load_state_dict(torch.load(weights_path, weights_only=True))
+
+    return model, config
+
+
+def load_checkpoint_config(model_name: str) -> dict:
+    config_path = Path("checkpoints/pretrained") / model_name / "config_pretrain.yml"
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config not found: {config_path}")
+    return read_config_file(config_path)
+
+
+class PretrainTrainer:
+    def __init__(self, config: dict, dataset):
+        self.config = config
         self.dataset = dataset
-        self.dataloader = None
-        self.device = None
-        self.encoder_model = None
-        self.model = None
-        self.optimizer = None
-        self.scheduler = None
-        self.sampler = None
-        self.loss_fn = None
-        self.mining_fn = None
-        self.checkpoint = None
+        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        self.sampler = create_sampler(dataset, config)
+        self.dataloader = create_dataloader(
+            dataset,
+            batch_size=config["batch_size"],
+            num_workers=config["num_workers"],
+            sampler=self.sampler,
+        )
+        self.model = create_pretrain_model(config, self.device)
+        self.optimizer = create_optimizer(self.model, config)
+        self.loss_fn = create_loss_fn(config)
+        self.mining_fn = create_mining_fn(config)
 
-        self._initialize_device()
+        # Initialize tracking
+        wandb.init(project="BioRGM", config=config, mode="online", reinit=True)
+        self.checkpoint = Checkpoint(config, output_dir_name=wandb.run.name)
 
-    def initialize_for_training(self) -> None:
-        self._initialize_wandb()
-        self._initialize_sampler()
-        self._initialize_dataloader()
-        self._initialize_encoder_model()
-        self._initialize_model()
-        self._initialize_loss_fn()
-        self._initialize_optimizer()
-        self._initialize_mining_fn()
-        self._initialize_checkpoint()
+        print(f"Using device: {self.device}")
 
-    def train(self) -> None:
+    def train(self) -> PretrainModel:
         self.model.train()
 
-        for epoch in range(self.params["epochs"]):
+        for epoch in range(self.config["epochs"]):
             print(f"\nEpoch {epoch}\n" + "-" * 30)
-            self._train_loop()
+            self._train_epoch(epoch)
             self.checkpoint.save(self.model, epoch)
 
         wandb.finish()
+        return self.model
 
-    def load_pretrained_model(self, model_name) -> None:
-        # TODO: epoch_x.pth should be a parameter
-        weights_file_path = Path("checkpoints/pretrained") / model_name / "epoch_4.pth"
-        config_file_path = Path("checkpoints/pretrained") / model_name / "config_pretrain.yml"
-        self.params: dict = read_config_file(config_file_path)
+    def _train_epoch(self, epoch: int) -> None:
+        for i, batch in enumerate(self.dataloader):
+            # Move to device
+            labels = batch.y.to(self.device)
+            batch = batch.to(self.device)
 
-        encoder_model = self._get_encoder_model(self.params["encoder"])
-        self.model = PretrainModel(encoder_model, self.params["dim_h"], self.params["dropout"])
-        self.model.load_state_dict(torch.load(weights_file_path, weights_only=True))
+            # Forward pass
+            embeddings = self.model(batch)
 
-    def load_random_model(self, encoder_model, dim_h, dropout) -> None:
-        self.model = PretrainModel(encoder_model, dim_h, dropout).to(self.device)
+            # Mine hard triplets and compute loss
+            indices = self.mining_fn(embeddings, labels)
+            loss = self.loss_fn(embeddings, labels, indices)
 
-    def _initialize_wandb(self) -> None:
-        wandb.init(project="BioRGM", config=self.params, mode="online", reinit=True)
-
-    def _initialize_dataloader(self) -> None:
-        self.dataloader = DataLoader(
-            self.dataset,
-            batch_size=self.params["batch_size"],
-            num_workers=self.params["num_workers"],
-            sampler=self.sampler,
-        )
-
-    def _initialize_device(self) -> None:
-        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        print(f"From Pretrain, using device: {self.device}")
-
-    def _initialize_encoder_model(self) -> None:
-        self.encoder_model = self._get_encoder_model(self.params["encoder"]).to(self.device)
-
-    def _initialize_model(self) -> None:
-        self.model = PretrainModel(
-            encoder=self.encoder_model,
-            dim_h=self.params["dim_h"],
-            dropout=self.params["dropout"],
-        ).to(self.device)
-
-    def _initialize_loss_fn(self) -> None:
-        self.loss_fn = losses.TripletMarginLoss(
-            margin=self.params["margin"],
-            distance=self._get_distance_metric(),
-        )
-
-    def _initialize_optimizer(self) -> None:
-        self.optimizer = torch.optim.Adam(
-            params=self.model.parameters(),
-            lr=self.params["lr"],
-            weight_decay=self.params["weight_decay"],
-        )
-
-    def _initialize_sampler(self) -> None:
-        self.sampler = samplers.MPerClassSampler(
-            self.dataset.y,
-            m=self.params["num_samples_per_class"],
-            batch_size=self.params["batch_size"],
-            length_before_new_iter=len(self.dataset),
-        )
-
-    def _initialize_mining_fn(self) -> None:
-        self.mining_fn = miners.TripletMarginMiner(
-            margin=self.params["margin"],
-            distance=self._get_distance_metric(),
-            type_of_triplets=self.params["type_of_triplets"],
-        )
-
-    def _initialize_checkpoint(self) -> None:
-        output_dir_name = wandb.run.name
-        # output_dir_name = generate_random_alphanumeric(length=10)
-        self.checkpoint = Checkpoint(self.params, output_dir_name)
-
-    def get_dim_h(self) -> int:
-        return self.params["dim_h"]
-
-    def _get_encoder_model(self, encoder_name):
-        if encoder_name == "embedding":
-            return CategoricalEncodingModel()
-        elif encoder_name == "one_hot":
-            return OneHotEncoderModel()
-        else:
-            raise NotImplementedError
-
-    def _get_distance_metric(self) -> BaseDistance:
-        match self.params["distance_metric"]:
-            case "euclidean":
-                return LpDistance(normalize_embeddings=True, p=2, power=1)
-            case "cosine":
-                return CosineSimilarity()
-            case _:
-                print("Unknown distance metric.")
-                sys.exit(1)
-
-    def _train_loop(self) -> None:
-        for i, data in enumerate(self.dataloader):
-            label, data = data.y.to(self.device), data.to(self.device)
-            embeddings = self.model(data)
-
-            indices_tuple = self.mining_fn(embeddings, label)
-            loss = self.loss_fn(embeddings, label, indices_tuple)
-
+            # Backward pass
             loss.backward()
             self.optimizer.step()
             self.optimizer.zero_grad()
 
+            # Logging
             if i % 20 == 0:
                 print(
-                    f"Iteration {i}: Loss = {loss:.3g}, Mined triplets = {self.mining_fn.num_triplets}"
+                    f"Iteration {i}: Loss = {loss:.3g}, "
+                    f"Mined triplets = {self.mining_fn.num_triplets}"
                 )
-                wandb.log({"Loss": loss, "Mined Triplets": self.mining_fn.num_triplets})
+                wandb.log({"Loss": loss.item(), "Mined Triplets": self.mining_fn.num_triplets})
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Pretrain molecular GNN with metric learning")
+    parser.add_argument("--batch_size", type=int, default=96)
+    parser.add_argument("--dim_h", type=int, default=32)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--lr", type=float, default=1.0e-6)
+    parser.add_argument("--weight_decay", type=float, default=5.0e-4)
+    parser.add_argument(
+        "--encoder", type=str, default="embedding", choices=["embedding", "one_hot"]
+    )
+    parser.add_argument("--margin", type=float, default=0.2)
+    parser.add_argument(
+        "--distance_metric", type=str, default="cosine", choices=["cosine", "euclidean"]
+    )
+    parser.add_argument("--type_of_triplets", type=str, default="all")
+    parser.add_argument("--num_samples_per_class", type=int, default=2)
+    parser.add_argument("--file_name", type=str, default="pubchem_1k_triplets.csv")
+    parser.add_argument("--num_workers", type=int, default=0)
+
+    args = parser.parse_args()
+    config = vars(args)
+
+    # Load dataset
+    data_dir = Path("data")
+    dataset = PubchemDataset(root=data_dir / "pubchem" / "processed", file_name=config["file_name"])
+
+    # Train
+    trainer = PretrainTrainer(config, dataset)
+    trained_model = trainer.train()
+
+    print(f"\nTraining complete! Model saved to: {trainer.checkpoint.output_dir_name}")
 
 
 if __name__ == "__main__":
