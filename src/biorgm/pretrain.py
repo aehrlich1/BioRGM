@@ -1,10 +1,8 @@
 import argparse
-import os
 import sys
 from pathlib import Path
 
 import torch
-import torch.multiprocessing as mp
 from pytorch_metric_learning import losses, miners, samplers
 from pytorch_metric_learning.distances import BaseDistance, CosineSimilarity, LpDistance
 from torch_geometric.loader import DataLoader
@@ -12,7 +10,7 @@ from torch_geometric.loader import DataLoader
 import wandb
 from biorgm.data import PubchemDataset
 from biorgm.model import CategoricalEncodingModel, OneHotEncoderModel, PretrainModel
-from biorgm.utils import Checkpoint, make_combinations, read_config_file
+from biorgm.utils import Checkpoint, read_config_file
 
 
 def main():

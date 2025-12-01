@@ -1,10 +1,7 @@
 import argparse
 import warnings
-from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import Manager
 from pathlib import Path
 
-import pandas as pd
 import torch
 from sklearn.metrics import roc_auc_score
 from torch.nn import BCELoss
@@ -17,12 +14,7 @@ from torchinfo import summary
 import wandb
 from biorgm.model import CategoricalEncodingModel, FinetuneModel
 from biorgm.pretrain import Pretrain
-from biorgm.utils import (
-    PerformanceTracker,
-    generate_random_alphanumeric,
-    make_combinations,
-    save_dict_to_csv,
-)
+from biorgm.utils import PerformanceTracker, generate_random_alphanumeric, save_dict_to_csv
 
 
 def main():
